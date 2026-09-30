@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TruthEditor</title>
+    <!--
+      Loading screen. It is plain HTML/CSS so it shows immediately, before any
+      JavaScript has loaded; src/main.tsx fades it out once the app has rendered.
+    -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #f1f2f4;
+      }
+      #boot {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        background: #f1f2f4;
+        color: #667085;
+        font: 13px/1.45 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+        transition: opacity 0.25s ease;
+      }
+      #boot.is-done {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #boot .boot-spinner {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        border: 3px solid rgba(37, 99, 235, 0.18);
+        border-top-color: #2563eb;
+        animation: boot-spin 0.8s linear infinite;
+      }
+      #boot .boot-name {
+        font-size: 15px;
+        font-weight: 650;
+        color: #1f2328;
+      }
+      #boot .boot-name span {
+        color: #2563eb;
+      }
+      #boot .boot-error {
+        display: none;
+        max-width: 420px;
+        text-align: center;
+        color: #c62828;
+      }
+      #boot.is-failed .boot-spinner,
+      #boot.is-failed .boot-text {
+        display: none;
+      }
+      #boot.is-failed .boot-error {
+        display: block;
+      }
+      @keyframes boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #boot .boot-spinner {
+          animation-duration: 2.4s;
+        }
+      }
+      @media (prefers-color-scheme: dark) {
+        html,
+        body,
+        #boot {
+          background: #17191c;
+        }
+        #boot {
+          color: #9aa3ae;
+        }
+        #boot .boot-name {
+          color: #e6e8eb;
+        }
+        #boot .boot-name span {
+          color: #5b8def;
+        }
+        #boot .boot-spinner {
+          border-color: rgba(91, 141, 239, 0.2);
+          border-top-color: #5b8def;
+        }
+        #boot .boot-error {
+          color: #ff6b6b;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="boot" role="status" aria-live="polite">
+      <div class="boot-spinner" aria-hidden="true"></div>
+      <div class="boot-name"><span>◆</span> TruthEditor</div>
+      <div class="boot-text">Loading the designer…</div>
+      <div class="boot-error">
+        The designer failed to load. Check the terminal running <code>npm run dev</code> or the browser console for
+        details, then reload.
+      </div>
+    </div>
+    <div id="root"></div>
+    <script>
+      // If the app crashes while starting, replace the spinner with a message instead of spinning forever.
+      window.__bootFailed = function () {
+        var boot = document.getElementById('boot');
+        if (boot && !boot.classList.contains('is-done')) boot.classList.add('is-failed');
+      };
+      window.addEventListener('error', window.__bootFailed);
+      window.addEventListener('unhandledrejection', window.__bootFailed);
+    </script>
+    <script type="module" src="/src/main.tsx" onerror="window.__bootFailed()"></script>
+  </body>
+</html>

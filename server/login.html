@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Log in · TruthEditor</title>
+    <style>
+      :root {
+        --bg: #f1f2f4;
+        --panel: #ffffff;
+        --panel-2: #f7f8fa;
+        --border: #e1e4e8;
+        --text: #1f2328;
+        --muted: #667085;
+        --accent: #2563eb;
+        --accent-soft: rgba(37, 99, 235, 0.1);
+        --danger: #c62828;
+        --ui: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #17191c;
+          --panel: #1f2226;
+          --panel-2: #26292e;
+          --border: #33373d;
+          --text: #e6e8eb;
+          --muted: #9aa3ae;
+          --accent: #5b8def;
+          --accent-soft: rgba(91, 141, 239, 0.16);
+          --danger: #ff6b6b;
+          color-scheme: dark;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px 16px;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.5 var(--ui);
+      }
+      main {
+        width: 100%;
+        max-width: 400px;
+      }
+      .brand {
+        text-align: center;
+        font-weight: 650;
+        font-size: 20px;
+        margin-bottom: 4px;
+      }
+      .brand span {
+        color: var(--accent);
+      }
+      .tagline {
+        text-align: center;
+        color: var(--muted);
+        margin: 0 0 20px;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.08);
+        overflow: hidden;
+      }
+      .tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        border-bottom: 1px solid var(--border);
+      }
+      .tabs button {
+        font: inherit;
+        font-weight: 600;
+        padding: 12px;
+        border: 0;
+        background: var(--panel-2);
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .tabs button[aria-selected='true'] {
+        background: var(--panel);
+        color: var(--accent);
+        box-shadow: inset 0 -2px 0 var(--accent);
+      }
+      form {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 20px;
+      }
+      label.field {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        font-weight: 600;
+        font-size: 13px;
+      }
+      label.field .hint {
+        font-weight: 400;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      input[type='text'],
+      input[type='email'],
+      input[type='password'] {
+        font: inherit;
+        padding: 9px 11px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: var(--panel-2);
+        color: var(--text);
+      }
+      input:focus {
+        outline: 2px solid var(--accent-soft);
+        border-color: var(--accent);
+      }
+      .check {
+        display: flex;
+        gap: 9px;
+        align-items: flex-start;
+        font-size: 13px;
+      }
+      .check input {
+        margin-top: 3px;
+      }
+      button.primary {
+        font: inherit;
+        font-weight: 600;
+        padding: 10px;
+        border-radius: 7px;
+        border: 1px solid var(--accent);
+        background: var(--accent);
+        color: #fff;
+        cursor: pointer;
+      }
+      button.primary:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      .error {
+        display: none;
+        padding: 9px 11px;
+        border-radius: 7px;
+        color: var(--danger);
+        background: rgba(198, 40, 40, 0.1);
+        font-size: 13px;
+      }
+      .error.is-shown {
+        display: block;
+      }
+      .register-only {
+        display: none;
+      }
+      form.is-register .register-only {
+        display: flex;
+      }
+      dialog {
+        width: min(420px, calc(100vw - 32px));
+        padding: 22px 22px 18px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--panel);
+        color: var(--text);
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
+      }
+      dialog::backdrop {
+        background: rgba(15, 17, 20, 0.45);
+      }
+      dialog h2 {
+        margin: 0 0 8px;
+        font-size: 17px;
+      }
+      dialog p {
+        margin: 0 0 18px;
+        color: var(--muted);
+      }
+      .dialog-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      button.secondary {
+        font: inherit;
+        font-weight: 600;
+        padding: 10px;
+        border-radius: 7px;
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        color: var(--text);
+        cursor: pointer;
+      }
+      .switch {
+        text-align: center;
+        color: var(--muted);
+        font-size: 13px;
+        margin: 14px 0 0;
+      }
+      .switch a {
+        color: var(--accent);
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand"><span>◆</span> TruthEditor</div>
+      <p class="tagline">Design R Shiny apps visually. Log in or create a free account to start.</p>
+      <div class="card">
+        <div class="tabs" role="tablist">
+          <button type="button" role="tab" id="tab-login" aria-selected="true">Log in</button>
+          <button type="button" role="tab" id="tab-register" aria-selected="false">Create account</button>
+        </div>
+        <form id="form" novalidate>
+          <label class="field register-only">
+            Name <span class="hint">optional</span>
+            <input type="text" name="name" autocomplete="name" maxlength="100" />
+          </label>
+          <label class="field">
+            Email
+            <input type="email" name="email" autocomplete="email" required />
+          </label>
+          <label class="field">
+            Password
+            <input type="password" name="password" autocomplete="current-password" required minlength="8" />
+            <span class="hint register-only">At least 8 characters.</span>
+          </label>
+          <label class="check register-only">
+            <input type="checkbox" name="newsletter" {{NEWSLETTER_CHECKED}} />
+            <span>Send me the TruthEditor newsletter with news, tips and updates.</span>
+          </label>
+          <div class="error" id="error" role="alert"></div>
+          <button type="submit" class="primary" id="submit">Log in</button>
+        </form>
+      </div>
+      <p class="switch" id="switch"></p>
+    </main>
+    <!-- Shown once when someone creates an account without ticking the newsletter box. -->
+    <dialog id="newsletter-dialog" aria-labelledby="newsletter-title" aria-describedby="newsletter-text">
+      <h2 id="newsletter-title">Are you sure you don't want the newsletter?</h2>
+      <p id="newsletter-text">
+        Without it you'll miss out on important updates: new features, tips for building Shiny apps, and changes
+        that affect your designs.
+      </p>
+      <div class="dialog-actions">
+        <button type="button" class="secondary" id="newsletter-no">Do not subscribe</button>
+        <button type="button" class="primary" id="newsletter-yes">Subscribe</button>
+      </div>
+    </dialog>
+    <script>
+      (function () {
+        var form = document.getElementById('form');
+        var error = document.getElementById('error');
+        var submit = document.getElementById('submit');
+        var tabLogin = document.getElementById('tab-login');
+        var tabRegister = document.getElementById('tab-register');
+        var switchText = document.getElementById('switch');
+        var params = new URLSearchParams(location.search);
+        var mode = params.get('mode') === 'register' ? 'register' : 'login';
+
+        function safeNext(n) {
+          if (!n || n.charAt(0) !== '/' || n.indexOf('//') === 0 || n.indexOf('/\\') === 0 || n.indexOf('/login') === 0) return '/';
+          return n;
+        }
+
+        function setMode(m) {
+          mode = m;
+          var reg = m === 'register';
+          form.classList.toggle('is-register', reg);
+          tabLogin.setAttribute('aria-selected', String(!reg));
+          tabRegister.setAttribute('aria-selected', String(reg));
+          submit.textContent = reg ? 'Create account' : 'Log in';
+          form.password.setAttribute('autocomplete', reg ? 'new-password' : 'current-password');
+          document.title = (reg ? 'Create account' : 'Log in') + ' · TruthEditor';
+          switchText.innerHTML = reg
+            ? 'Already have an account? <a data-mode="login">Log in</a>'
+            : 'New here? <a data-mode="register">Create an account</a>';
+          error.classList.remove('is-shown');
+        }
+
+        tabLogin.onclick = function () { setMode('login'); };
+        tabRegister.onclick = function () { setMode('register'); };
+        switchText.onclick = function (e) {
+          var m = e.target && e.target.getAttribute && e.target.getAttribute('data-mode');
+          if (m) setMode(m);
+        };
+
+        var dialog = document.getElementById('newsletter-dialog');
+
+        function showError(message) {
+          error.textContent = message;
+          error.classList.add('is-shown');
+        }
+
+        form.onsubmit = function (e) {
+          e.preventDefault();
+          error.classList.remove('is-shown');
+          if (mode === 'register') {
+            // Check the obvious mistakes first, so the newsletter question isn't asked for nothing.
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.value.trim())) return showError('Please enter a valid email address.');
+            if (form.password.value.length < 8) return showError('The password must be at least 8 characters.');
+            if (!form.newsletter.checked) {
+              dialog.showModal();
+              return;
+            }
+          }
+          send();
+        };
+
+        // The newsletter question: either answer creates the account.
+        document.getElementById('newsletter-yes').onclick = function () {
+          form.newsletter.checked = true;
+          dialog.close();
+          send();
+        };
+        document.getElementById('newsletter-no').onclick = function () {
+          dialog.close();
+          send();
+        };
+        // Escape or clicking outside just closes the question and returns to the form.
+        dialog.addEventListener('click', function (e) {
+          if (e.target === dialog) dialog.close();
+        });
+
+        function send() {
+          var body = { email: form.email.value, password: form.password.value };
+          if (mode === 'register') {
+            body.name = form.name.value;
+            body.newsletter = form.newsletter.checked;
+          }
+          submit.disabled = true;
+          fetch('/api/' + mode, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify(body),
+          })
+            .then(function (res) {
+              return res.json().catch(function () { return {}; }).then(function (data) {
+                if (!res.ok) throw new Error(data.error || 'Something went wrong. Please try again.');
+                location.href = safeNext(params.get('next'));
+              });
+            })
+            .catch(function (err) {
+              showError(err.message === 'Failed to fetch' ? 'Cannot reach the server. Please try again.' : err.message);
+              submit.disabled = false;
+            });
+        }
+
+        setMode(mode);
+      })();
+    </script>
+  </body>
+</html>
