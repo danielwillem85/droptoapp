@@ -21,6 +21,8 @@ import type { Config } from './config';
 import type { Db, UserRow } from './db';
 
 const LOGIN_TEMPLATE = resolve(import.meta.dirname, 'login.html');
+/** Public files (images for the landing page and link previews), served without logging in at /static/. */
+const PUBLIC_DIR = resolve(import.meta.dirname, 'public');
 
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -32,6 +34,7 @@ const TYPES: Record<string, string> = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
+  '.webp': 'image/webp',
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
   '.txt': 'text/plain; charset=utf-8',
@@ -69,10 +72,21 @@ export function createApp(cfg: Config, db: Db, opts: AppOptions = {}) {
   const authLimiter = new RateLimiter(10, 15 * 60 * 1000); // per IP, login + register
   const emailLimiter = new RateLimiter(10, 15 * 60 * 1000); // per email, login
   const background = new Set<Promise<unknown>>();
-  const loginPage = readFileSync(LOGIN_TEMPLATE, 'utf8').replace(
+  const loginTemplate = readFileSync(LOGIN_TEMPLATE, 'utf8').replace(
     '{{NEWSLETTER_CHECKED}}',
     cfg.newsletterCheckedByDefault ? 'checked' : '',
   );
+
+  /** The site's public address: SITE_URL, or else worked out from the request. */
+  function siteUrl(req: IncomingMessage) {
+    if (cfg.siteUrl) return cfg.siteUrl;
+    const host = String(req.headers.host ?? 'localhost').replace(/[^\w.:\-\[\]]/g, '');
+    const forwarded = cfg.trustProxy ? String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim() : '';
+    const proto = forwarded === 'https' || forwarded === 'http' ? forwarded : cfg.cookieSecure ? 'https' : 'http';
+    return `${proto}://${host}`;
+  }
+
+  const landingPage = (req: IncomingMessage) => loginTemplate.replaceAll('{{SITE_URL}}', siteUrl(req));
 
   const clientIp = (req: IncomingMessage) =>
     (cfg.trustProxy && (req.headers['x-real-ip'] as string)) || req.socket.remoteAddress || 'unknown';
@@ -194,6 +208,26 @@ export function createApp(cfg: Config, db: Db, opts: AppOptions = {}) {
     });
   }
 
+  function sendLanding(req: IncomingMessage, res: ServerResponse) {
+    // "/" is the landing page or the editor depending on the session cookie, so caches must not mix them up.
+    return send(res, 200, landingPage(req), {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+      Vary: 'Cookie',
+    });
+  }
+
+  function servePublic(res: ServerResponse, name: string) {
+    // Flat folder, plain file names only: no sub-folders, no "..".
+    if (!/^[\w-]+\.[a-z0-9]+$/i.test(name)) throw new HttpError(404, 'Not found.');
+    const file = join(PUBLIC_DIR, name);
+    if (!existsSync(file) || !statSync(file).isFile()) throw new HttpError(404, 'Not found.');
+    send(res, 200, readFileSync(file), {
+      'Content-Type': TYPES[extname(file)] ?? 'application/octet-stream',
+      'Cache-Control': 'public, max-age=86400',
+    });
+  }
+
   // -------------------------------------------------------------- request handler
 
   async function handle(req: IncomingMessage, res: ServerResponse) {
@@ -207,10 +241,27 @@ export function createApp(cfg: Config, db: Db, opts: AppOptions = {}) {
 
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed.');
 
+      // Public pages and files, the same for everyone.
+      if (path === '/robots.txt')
+        return send(res, 200, `User-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: ${siteUrl(req)}/sitemap.xml\n`, {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Cache-Control': 'public, max-age=3600',
+        });
+      if (path === '/sitemap.xml')
+        return send(
+          res,
+          200,
+          `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>${siteUrl(req)}/</loc></url>\n</urlset>\n`,
+          { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' },
+        );
+      if (path.startsWith('/static/')) return servePublic(res, path.slice('/static/'.length));
+
+      // Logged-out visitors get the landing page (with the login and registration form) at / and /login.
       if (path === '/login') {
         if (user) return send(res, 302, '', { Location: safeNext(url.searchParams.get('next')) });
-        return send(res, 200, loginPage, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+        return sendLanding(req, res);
       }
+      if (path === '/' && !user) return sendLanding(req, res);
 
       // Everything else is the editor: logged-in users only.
       if (!user) {

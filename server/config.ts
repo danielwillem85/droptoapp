@@ -13,6 +13,11 @@ export interface Config {
   /** Behind nginx: take the client IP (for rate limiting) from X-Real-IP. */
   trustProxy: boolean;
   sessionDays: number;
+  /**
+   * Public address of the site, like https://droptoapp.com (no trailing slash). Used for the canonical link,
+   * social preview images and sitemap.xml. When empty, it is worked out from each request's Host header.
+   */
+  siteUrl: string;
   /** Whether the newsletter box on the registration form starts ticked. */
   newsletterCheckedByDefault: boolean;
   brevo: {
@@ -35,6 +40,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, root = process.
     cookieSecure: bool(env.COOKIE_SECURE, false),
     trustProxy: bool(env.TRUST_PROXY, false),
     sessionDays: Number(env.SESSION_DAYS) || 30,
+    siteUrl: (env.SITE_URL || '').trim().replace(/\/+$/, ''),
     newsletterCheckedByDefault: bool(env.NEWSLETTER_CHECKED_BY_DEFAULT, false),
     brevo: {
       apiKey: env.BREVO_API_KEY || '',

@@ -19,7 +19,8 @@ npm run dev            # open http://localhost:5173, then register an account
 ```
 
 `npm run dev` starts both the account server (port 3000) and Vite (port 5173,
-with hot reload); Vite forwards `/api` and `/login` to the server.
+with hot reload); Vite forwards `/api`, `/login`, `/static` and the robots/sitemap
+files to the server.
 
 Other scripts:
 
@@ -28,7 +29,7 @@ Other scripts:
 | `npm test`          | Unit tests: model, R code generator, round-trips, accounts API   |
 | `npm run typecheck` | TypeScript type check                                            |
 | `npm run build`     | Production build of the editor in `dist/`                        |
-| `npm start`         | Production server: login page, accounts API and `dist/`          |
+| `npm start`         | Production server: landing page, accounts API and `dist/`        |
 
 To run the generated app, click **Export app.R** and then, in R:
 
@@ -113,8 +114,9 @@ lost on the next visual edit.
 ## Accounts and newsletter
 
 Visitors must register or log in before they can use the editor. The server
-enforces this: without a valid session it only serves the login page, so the
-editor's code is never sent to anonymous visitors.
+enforces this: without a valid session it only serves the landing page (with
+the login and registration form), so the editor's code is never sent to
+anonymous visitors.
 
 - **Accounts** live in a SQLite database (`data/droptoapp.db` by default,
   created automatically). Passwords are stored as scrypt hashes; log-ins are
@@ -143,9 +145,35 @@ Settings are in `.env` (see `.env.example` for all of them):
 | `PORT`, `HOST`                   | Where the server listens (default `127.0.0.1:3000`)      |
 | `DATABASE_PATH`                  | SQLite file (default `data/droptoapp.db`)              |
 | `SESSION_DAYS`                   | How long a log-in lasts (default 30)                     |
+| `SITE_URL`                       | Public address for SEO, e.g. `https://droptoapp.com`     |
 | `COOKIE_SECURE`, `TRUST_PROXY`   | Set both to `true` in production behind nginx + HTTPS    |
 
 To see who signed up: `sqlite3 data/droptoapp.db "select email, newsletter, brevo_status, created_at from users"`.
+
+## Landing page and SEO
+
+Logged-out visitors get a landing page at `/` (logged-in users get the editor at
+the same address). It is `server/login.html`: a hero with the login and
+registration form, a screenshot, features, how it works, the supported
+components, who it's for, an FAQ and a call to action. `/login` shows the same
+page and is still where the editor sends you when a session expires.
+
+For search engines and link previews it has:
+
+- a title and meta description, a canonical link to `/`, Open Graph and Twitter
+  card tags with a 1200×630 preview image;
+- JSON-LD structured data: `SoftwareApplication`, and a `FAQPage` that matches
+  the visible FAQ (a test checks they stay in sync);
+- `/robots.txt` (everything except `/api/`) and `/sitemap.xml`;
+- images in `server/public/`, served without logging in at `/static/…`.
+
+Set `SITE_URL` (e.g. `https://droptoapp.com`) so the canonical link, preview
+image and sitemap use your real address; without it the address comes from each
+request. `/` is sent with `Cache-Control: no-store` and `Vary: Cookie`, so a
+CDN never mixes up the landing page and the editor.
+
+After deploying, add the site to Google Search Console and submit
+`https://droptoapp.com/sitemap.xml`.
 
 ## Deploying on Ubuntu
 
@@ -153,7 +181,7 @@ To see who signed up: `sqlite3 data/droptoapp.db "select email, newsletter, brev
 2. Copy the project to the server (e.g. `/opt/droptoapp`), then:
    ```bash
    npm ci && npm run build
-   cp .env.example .env   # fill in Brevo; set COOKIE_SECURE=true and TRUST_PROXY=true
+   cp .env.example .env   # fill in Brevo and SITE_URL; set COOKIE_SECURE=true and TRUST_PROXY=true
    ```
 3. Run it as a service, `/etc/systemd/system/droptoapp.service`:
    ```ini
@@ -216,12 +244,13 @@ src/
     auth.ts           current user, log out
 server/
   index.ts            entry point (npm start)
-  app.ts              routes: /login, /api/register, /api/login, /api/logout, /api/me, the editor
+  app.ts              routes: landing page, /static, robots.txt, sitemap.xml, /api/*, the editor
   auth.ts             scrypt passwords, sessions, rate limiting, cookies
   db.ts               SQLite schema (users, sessions)
   brevo.ts            newsletter sign-up via the Brevo API
   config.ts           settings from .env
-  login.html          the login / registration page
+  login.html          the landing page with the login / registration form
+  public/             images for the landing page and link previews
 tests/                node:test tests (model, app.R round-trips, accounts API), run with tsx
 ```
 

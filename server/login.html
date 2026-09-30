@@ -3,7 +3,120 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Log in · DropToApp</title>
+    <title>DropToApp: drag-and-drop R Shiny app builder</title>
+    <meta
+      name="description"
+      content="Design R Shiny apps visually. Drag and drop bslib layouts, inputs and outputs, edit the code side by side, and export a clean app.R. Free to start."
+    />
+    <link rel="canonical" href="{{SITE_URL}}/" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1l7 7-7 7-7-7z' fill='%232563eb'/%3E%3C/svg%3E"
+    />
+    <meta name="theme-color" content="#2563eb" />
+    <!-- Link previews (Open Graph / social) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="DropToApp" />
+    <meta property="og:title" content="DropToApp: drag-and-drop R Shiny app builder" />
+    <meta
+      property="og:description"
+      content="Design R Shiny apps visually and export a clean app.R. Layouts, inputs and outputs by drag and drop, with the code side by side."
+    />
+    <meta property="og:url" content="{{SITE_URL}}/" />
+    <meta property="og:image" content="{{SITE_URL}}/static/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="The DropToApp editor showing a Shiny app with a sidebar, value boxes and a histogram" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "DropToApp",
+  "url": "{{SITE_URL}}/",
+  "image": "{{SITE_URL}}/static/og-image.png",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Web browser",
+  "description": "A visual, drag-and-drop editor for R Shiny user interfaces that writes clean app.R code with Shiny and bslib.",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "EUR"
+  }
+}
+    </script>
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What is DropToApp?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "DropToApp is a visual editor for R Shiny user interfaces. You drag layouts, inputs and outputs onto a canvas, adjust them in a properties panel, and DropToApp writes a complete, readable app.R file using Shiny and bslib as you work."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do I need to know R to use it?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Not to design the interface: layouts, inputs and outputs are all point-and-click. To connect your own data and logic you write R in each output's server code field, and seeing the generated code next to the design is also a practical way to learn how Shiny apps are put together."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does the exported app depend on DropToApp?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. The export is plain Shiny and bslib code with no DropToApp package or runtime. Install the two packages with install.packages(c(\"shiny\", \"bslib\")) and run the app with shiny::runApp(), locally, on Shiny Server, Posit Connect or shinyapps.io."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I open an existing Shiny app?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Open an app.R whose UI uses page_sidebar(), page_fillable() or page_fluid() and DropToApp rebuilds the design from it. Anything it has no visual editor for is kept as an R code block, and code outside the UI (data loading, reactives, helper functions) is preserved as written."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I edit the code by hand?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. The code view is a full editor: type in app.R and the canvas updates as you go, or change the design and the code is regenerated. Syntax errors are pointed out with the line and column, and the design waits until the code is valid again."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Which Shiny components are supported?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Page layouts with a sidebar, cards, grids of columns and rows, tabsets, value boxes, sliders, numeric and text inputs, text areas, select inputs, radio buttons, checkboxes, date inputs, action buttons, plot, table, text and console outputs, headings and paragraphs, plus R code blocks for anything else."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Where are my designs stored?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "In your own browser. Designs are autosaved locally and never uploaded to our servers; you can save a design file or export app.R at any time. Your account is only used to sign you in."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is DropToApp free?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, creating an account and using the editor is free."
+      }
+    }
+  ]
+}
+    </script>
     <style>
       :root {
         --bg: #f1f2f4;
@@ -34,34 +147,6 @@
       }
       * {
         box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        padding: 24px 16px;
-        background: var(--bg);
-        color: var(--text);
-        font: 14px/1.5 var(--ui);
-      }
-      main {
-        width: 100%;
-        max-width: 400px;
-      }
-      .brand {
-        text-align: center;
-        font-weight: 650;
-        font-size: 20px;
-        margin-bottom: 4px;
-      }
-      .brand span {
-        color: var(--accent);
-      }
-      .tagline {
-        text-align: center;
-        color: var(--muted);
-        margin: 0 0 20px;
       }
       .card {
         background: var(--panel);
@@ -155,11 +240,8 @@
       .error.is-shown {
         display: block;
       }
-      .register-only {
+      form:not(.is-register) .register-only {
         display: none;
-      }
-      form.is-register .register-only {
-        display: flex;
       }
       dialog {
         width: min(420px, calc(100vw - 32px));
@@ -206,12 +288,336 @@
         color: var(--accent);
         cursor: pointer;
       }
+
+      /* ---------------------------------------------------------------- landing page */
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 15px/1.6 var(--ui);
+      }
+      a {
+        color: var(--accent);
+      }
+      code {
+        font: 0.9em ui-monospace, 'Cascadia Code', Consolas, monospace;
+        background: var(--accent-soft);
+        border-radius: 4px;
+        padding: 0 4px;
+      }
+      .wrap {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 0 20px;
+      }
+      .site-header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: color-mix(in srgb, var(--bg) 88%, transparent);
+        backdrop-filter: blur(8px);
+        border-bottom: 1px solid var(--border);
+      }
+      .site-header .wrap {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        height: 60px;
+      }
+      .brand {
+        font-weight: 700;
+        font-size: 18px;
+        color: var(--text);
+        text-decoration: none;
+      }
+      .brand span {
+        color: var(--accent);
+      }
+      .site-nav {
+        display: flex;
+        gap: 20px;
+        margin-left: auto;
+        font-size: 14px;
+      }
+      .site-nav a {
+        color: var(--muted);
+        text-decoration: none;
+      }
+      .site-nav a:hover {
+        color: var(--text);
+      }
+      .header-login {
+        font: inherit;
+        font-size: 14px;
+        font-weight: 600;
+        padding: 7px 14px;
+        border-radius: 7px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--text);
+        cursor: pointer;
+        text-decoration: none;
+      }
+      section {
+        padding: 64px 0;
+      }
+      section + section {
+        border-top: 1px solid var(--border);
+      }
+      h1 {
+        font-size: clamp(30px, 4.2vw, 46px);
+        line-height: 1.12;
+        letter-spacing: -0.02em;
+        margin: 12px 0 18px;
+      }
+      h2 {
+        font-size: clamp(24px, 3vw, 32px);
+        line-height: 1.2;
+        letter-spacing: -0.01em;
+        margin: 0 0 12px;
+      }
+      h3 {
+        font-size: 17px;
+        margin: 0 0 6px;
+      }
+      .section-intro {
+        color: var(--muted);
+        max-width: 680px;
+        margin: 0 0 32px;
+        font-size: 16px;
+      }
+      .eyebrow {
+        display: inline-block;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--accent);
+        background: var(--accent-soft);
+        border-radius: 999px;
+        padding: 3px 12px;
+      }
+      .hero {
+        padding: 56px 0 64px;
+      }
+      .hero .wrap {
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) minmax(320px, 400px);
+        gap: 56px;
+        align-items: center;
+      }
+      .lead {
+        font-size: 18px;
+        color: var(--muted);
+        margin: 0 0 22px;
+      }
+      .ticks {
+        list-style: none;
+        padding: 0;
+        margin: 0 0 28px;
+        display: grid;
+        gap: 8px;
+      }
+      .ticks li::before {
+        content: '✓';
+        color: var(--accent);
+        font-weight: 700;
+        margin-right: 10px;
+      }
+      .cta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .button {
+        display: inline-block;
+        font-weight: 600;
+        padding: 11px 20px;
+        border-radius: 8px;
+        text-decoration: none;
+        cursor: pointer;
+        border: 1px solid var(--accent);
+        background: var(--accent);
+        color: #fff;
+      }
+      .button.ghost {
+        background: transparent;
+        color: var(--accent);
+      }
+      .account-note {
+        text-align: center;
+        color: var(--muted);
+        font-size: 13px;
+        margin: 10px 0 0;
+      }
+      .screenshot {
+        margin: 0;
+      }
+      .screenshot img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.12);
+      }
+      .screenshot figcaption {
+        text-align: center;
+        color: var(--muted);
+        font-size: 14px;
+        margin-top: 14px;
+      }
+      .grid-3 {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 20px;
+      }
+      .feature {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 22px;
+      }
+      .feature p {
+        margin: 0;
+        color: var(--muted);
+      }
+      .steps {
+        counter-reset: step;
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      .steps li {
+        counter-increment: step;
+        position: relative;
+        padding-left: 56px;
+      }
+      .steps li::before {
+        content: counter(step);
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+        color: var(--accent);
+        background: var(--accent-soft);
+      }
+      .steps p {
+        margin: 0;
+        color: var(--muted);
+      }
+      .component-group h3 {
+        margin-bottom: 10px;
+      }
+      .component-group ul {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--muted);
+      }
+      .component-group li {
+        margin: 3px 0;
+      }
+      .audience p {
+        margin: 0;
+        color: var(--muted);
+      }
+      .faq {
+        max-width: 820px;
+      }
+      .faq details {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 14px 18px;
+        margin-bottom: 10px;
+      }
+      .faq summary {
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .faq details p {
+        margin: 10px 0 0;
+        color: var(--muted);
+      }
+      .final-cta {
+        text-align: center;
+      }
+      .final-cta .section-intro {
+        margin-left: auto;
+        margin-right: auto;
+      }
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 28px 0 40px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      footer p {
+        margin: 4px 0;
+      }
+      @media (max-width: 900px) {
+        .hero .wrap {
+          grid-template-columns: 1fr;
+          gap: 36px;
+        }
+        .grid-3 {
+          grid-template-columns: 1fr;
+        }
+        .site-nav {
+          display: none;
+        }
+        .header-login {
+          margin-left: auto;
+        }
+        section {
+          padding: 48px 0;
+        }
+      }
     </style>
   </head>
   <body>
+    <header class="site-header">
+      <div class="wrap">
+        <a class="brand" href="/"><span>◆</span> DropToApp</a>
+        <nav class="site-nav" aria-label="Page sections">
+          <a href="#features">Features</a>
+          <a href="#how-it-works">How it works</a>
+          <a href="#components">Components</a>
+          <a href="#faq">FAQ</a>
+        </nav>
+        <a class="header-login" href="#account" data-open="login">Log in</a>
+      </div>
+    </header>
+
     <main>
-      <div class="brand"><span>◆</span> DropToApp</div>
-      <p class="tagline">Design R Shiny apps visually. Log in or create a free account to start.</p>
+      <section class="hero">
+        <div class="wrap">
+          <div>
+            <span class="eyebrow">Visual editor for R Shiny</span>
+            <h1>Build R Shiny apps by drag and drop, and get clean <code>app.R</code> code</h1>
+            <p class="lead">
+              DropToApp is a Shiny UI designer for data scientists and R users. Lay out sidebars, cards, grids and tabs,
+              add inputs and outputs, and watch the Shiny and bslib code write itself, ready to run with
+              <code>shiny::runApp()</code>.
+            </p>
+            <ul class="ticks">
+              <li>Design the interface visually, with the R code updating side by side</li>
+              <li>Edit the code by hand and the design follows, or the other way round</li>
+              <li>Export standard Shiny and bslib code, with no lock-in</li>
+            </ul>
+            <div class="cta-row">
+              <a class="button" href="#account" data-open="register">Create a free account</a>
+              <a class="button ghost" href="#how-it-works">See how it works</a>
+            </div>
+          </div>
+
+          <div id="account">
       <div class="card">
         <div class="tabs" role="tablist">
           <button type="button" role="tab" id="tab-login" aria-selected="true">Log in</button>
@@ -240,7 +646,199 @@
         </form>
       </div>
       <p class="switch" id="switch"></p>
+            <p class="account-note">Free to use. Your designs stay in your browser.</p>
+          </div>
+        </div>
+      </section>
+
+      <section aria-label="Screenshot">
+        <div class="wrap">
+          <figure class="screenshot">
+            <img
+              src="/static/editor-screenshot.webp"
+              width="1600"
+              height="956"
+              loading="lazy"
+              decoding="async"
+              alt="The DropToApp editor: a component palette on the left, a Shiny app with a sidebar, value boxes and a histogram in the middle, and the generated app.R code below it"
+            />
+            <figcaption>The editor: components on the left, your app in the middle, the generated R code underneath.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section id="features">
+        <div class="wrap">
+          <h2>Everything you need to design a Shiny user interface</h2>
+          <p class="section-intro">
+            Building a Shiny UI by hand means nesting function calls and remembering argument names. DropToApp lets you
+            see the layout while you build it, and still gives you code you'd be happy to write yourself.
+          </p>
+          <div class="grid-3">
+            <article class="feature">
+              <h3>Drag-and-drop layouts</h3>
+              <p>Pages with a sidebar, cards, tabsets and value boxes, built from modern bslib components rather than legacy fluidRow() grids.</p>
+            </article>
+            <article class="feature">
+              <h3>Grids of rows and columns</h3>
+              <p>Add a column or row one cell at a time, split cells, and nest grids inside grids. Column widths stay balanced automatically.</p>
+            </article>
+            <article class="feature">
+              <h3>Visual and code editing, in sync</h3>
+              <p>Type in app.R and the canvas updates as you go. Change the design and the code is regenerated. Errors show the line and column.</p>
+            </article>
+            <article class="feature">
+              <h3>Inputs, outputs and server code</h3>
+              <p>Sliders, selects, buttons, plots, tables and more, each with its server code: renderPlot(), renderTable() and observeEvent() blocks are written for you.</p>
+            </article>
+            <article class="feature">
+              <h3>Open existing apps</h3>
+              <p>Import an app.R and keep working visually. Code DropToApp has no editor for, such as DT tables or helper functions, is kept exactly as written.</p>
+            </article>
+            <article class="feature">
+              <h3>Themes and responsive preview</h3>
+              <p>Preview Bootswatch themes and check the layout at desktop, tablet and phone widths before you run a single line of R.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="how-it-works">
+        <div class="wrap">
+          <h2>From idea to a running Shiny app in three steps</h2>
+          <p class="section-intro">No setup and nothing to install: DropToApp runs in your browser.</p>
+          <ol class="steps grid-3">
+            <li>
+              <h3>Drag in your components</h3>
+              <p>Start from an example or a blank page, then drop layouts, inputs and outputs where you want them.</p>
+            </li>
+            <li>
+              <h3>Fine-tune the details</h3>
+              <p>Set IDs, labels, choices and widths in the properties panel, or edit the R code directly. Both stay in sync.</p>
+            </li>
+            <li>
+              <h3>Export and run</h3>
+              <p>Download app.R and run it with <code>shiny::runApp()</code>, locally or on Shiny Server, Posit Connect or shinyapps.io.</p>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section id="components">
+        <div class="wrap">
+          <h2>Supported Shiny and bslib components</h2>
+          <p class="section-intro">
+            DropToApp writes the same functions you'd use by hand, so the code is easy to read, extend and maintain.
+          </p>
+          <div class="grid-3">
+            <div class="component-group">
+              <h3>Layout</h3>
+              <ul>
+                <li><code>page_sidebar()</code>, <code>page_fillable()</code>, <code>page_fluid()</code></li>
+                <li><code>sidebar()</code> and <code>card()</code> with headers</li>
+                <li><code>layout_columns()</code> grids of rows and columns</li>
+                <li><code>navset_card_tab()</code> with <code>nav_panel()</code> tabs</li>
+                <li><code>value_box()</code> for key numbers</li>
+              </ul>
+            </div>
+            <div class="component-group">
+              <h3>Inputs</h3>
+              <ul>
+                <li><code>sliderInput()</code>, <code>numericInput()</code></li>
+                <li><code>textInput()</code>, <code>textAreaInput()</code></li>
+                <li><code>selectInput()</code>, <code>radioButtons()</code></li>
+                <li><code>checkboxInput()</code>, <code>checkboxGroupInput()</code></li>
+                <li><code>dateInput()</code>, <code>actionButton()</code></li>
+              </ul>
+            </div>
+            <div class="component-group">
+              <h3>Outputs and content</h3>
+              <ul>
+                <li><code>plotOutput()</code> with <code>renderPlot()</code></li>
+                <li><code>tableOutput()</code> with <code>renderTable()</code></li>
+                <li><code>textOutput()</code> and <code>verbatimTextOutput()</code></li>
+                <li>Headings, paragraphs and dividers</li>
+                <li>R code blocks for any other UI, like <code>DT::DTOutput()</code></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="who">
+        <div class="wrap">
+          <h2>Made for people who build with R</h2>
+          <p class="section-intro">Whether you ship dashboards every week or are building your first Shiny app.</p>
+          <div class="grid-3 audience">
+            <div>
+              <h3>Data scientists</h3>
+              <p>Prototype a dashboard layout in minutes, then spend your time on the analysis instead of on nested UI code.</p>
+            </div>
+            <div>
+              <h3>Analysts and researchers</h3>
+              <p>Turn an R analysis into an interactive app your colleagues can use, without becoming a web developer first.</p>
+            </div>
+            <div>
+              <h3>Teachers and students</h3>
+              <p>See how every part of the interface maps to Shiny code. It's a hands-on way to learn how Shiny apps are built.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="faq">
+        <div class="wrap faq">
+          <h2>Frequently asked questions</h2>
+          <details>
+            <summary>What is DropToApp?</summary>
+            <p>DropToApp is a visual editor for R Shiny user interfaces. You drag layouts, inputs and outputs onto a canvas, adjust them in a properties panel, and DropToApp writes a complete, readable <code>app.R</code> file using Shiny and bslib as you work.</p>
+          </details>
+          <details>
+            <summary>Do I need to know R to use it?</summary>
+            <p>Not to design the interface: layouts, inputs and outputs are all point-and-click. To connect your own data and logic you write R in each output's server code field, and seeing the generated code next to the design is also a practical way to learn how Shiny apps are put together.</p>
+          </details>
+          <details>
+            <summary>Does the exported app depend on DropToApp?</summary>
+            <p>No. The export is plain Shiny and bslib code with no DropToApp package or runtime. Install the two packages with <code>install.packages(c("shiny", "bslib"))</code> and run the app with <code>shiny::runApp()</code>, locally, on Shiny Server, Posit Connect or shinyapps.io.</p>
+          </details>
+          <details>
+            <summary>Can I open an existing Shiny app?</summary>
+            <p>Yes. Open an <code>app.R</code> whose UI uses <code>page_sidebar()</code>, <code>page_fillable()</code> or <code>page_fluid()</code> and DropToApp rebuilds the design from it. Anything it has no visual editor for is kept as an R code block, and code outside the UI (data loading, reactives, helper functions) is preserved as written.</p>
+          </details>
+          <details>
+            <summary>Can I edit the code by hand?</summary>
+            <p>Yes. The code view is a full editor: type in <code>app.R</code> and the canvas updates as you go, or change the design and the code is regenerated. Syntax errors are pointed out with the line and column, and the design waits until the code is valid again.</p>
+          </details>
+          <details>
+            <summary>Which Shiny components are supported?</summary>
+            <p>Page layouts with a sidebar, cards, grids of columns and rows, tabsets, value boxes, sliders, numeric and text inputs, text areas, select inputs, radio buttons, checkboxes, date inputs, action buttons, plot, table, text and console outputs, headings and paragraphs, plus R code blocks for anything else.</p>
+          </details>
+          <details>
+            <summary>Where are my designs stored?</summary>
+            <p>In your own browser. Designs are autosaved locally and never uploaded to our servers; you can save a design file or export <code>app.R</code> at any time. Your account is only used to sign you in.</p>
+          </details>
+          <details>
+            <summary>Is DropToApp free?</summary>
+            <p>Yes, creating an account and using the editor is free.</p>
+          </details>
+        </div>
+      </section>
+
+      <section class="final-cta">
+        <div class="wrap">
+          <h2>Start building your Shiny app</h2>
+          <p class="section-intro">Create a free account and have your first layout on screen in a minute.</p>
+          <a class="button" href="#account" data-open="register">Create a free account</a>
+        </div>
+      </section>
     </main>
+
+    <footer>
+      <div class="wrap">
+        <p><strong>DropToApp</strong>: a visual, drag-and-drop editor for R Shiny user interfaces.</p>
+        <p>Shiny is a trademark of Posit Software, PBC. DropToApp is an independent project, not affiliated with or endorsed by Posit or the R Foundation.</p>
+      </div>
+    </footer>
     <!-- Shown once when someone creates an account without ticking the newsletter box. -->
     <dialog id="newsletter-dialog" aria-labelledby="newsletter-title" aria-describedby="newsletter-text">
       <h2 id="newsletter-title">Are you sure you don't want the newsletter?</h2>
@@ -277,7 +875,6 @@
           tabRegister.setAttribute('aria-selected', String(reg));
           submit.textContent = reg ? 'Create account' : 'Log in';
           form.password.setAttribute('autocomplete', reg ? 'new-password' : 'current-password');
-          document.title = (reg ? 'Create account' : 'Log in') + ' · DropToApp';
           switchText.innerHTML = reg
             ? 'Already have an account? <a data-mode="login">Log in</a>'
             : 'New here? <a data-mode="register">Create an account</a>';
@@ -344,7 +941,8 @@
             .then(function (res) {
               return res.json().catch(function () { return {}; }).then(function (data) {
                 if (!res.ok) throw new Error(data.error || 'Something went wrong. Please try again.');
-                location.href = safeNext(params.get('next'));
+                // On /login go to ?next=…; on the home page stay on the same address (it becomes the editor).
+                location.href = safeNext(location.pathname === '/' ? '/' + location.search : params.get('next'));
               });
             })
             .catch(function (err) {
@@ -352,6 +950,16 @@
               submit.disabled = false;
             });
         }
+
+        // "Create free account" / "Log in" buttons elsewhere on the page
+        Array.prototype.forEach.call(document.querySelectorAll('[data-open]'), function (el) {
+          el.addEventListener('click', function (e) {
+            e.preventDefault();
+            setMode(el.getAttribute('data-open'));
+            document.getElementById('account').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setTimeout(function () { form.email.focus({ preventScroll: true }); }, 350);
+          });
+        });
 
         setMode(mode);
       })();

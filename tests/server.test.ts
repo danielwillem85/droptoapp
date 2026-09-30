@@ -73,10 +73,15 @@ test('passwords are hashed with scrypt and verified', async () => {
   assert.equal(await verifyPassword('wrong', h), false);
 });
 
-test('visitors who are not logged in only get the login page', async () => {
+test('visitors who are not logged in only get the landing and login page', async () => {
   let res = await get('/');
-  assert.equal(res.status, 302);
-  assert.equal(res.headers.get('location'), '/login');
+  assert.equal(res.status, 200, 'the home page is the landing page, so search engines can index it');
+  assert.equal(res.headers.get('cache-control'), 'no-store');
+  assert.equal(res.headers.get('vary'), 'Cookie');
+  const home = await res.text();
+  assert.match(home, /<h1>/);
+  assert.match(home, /id="login-form"|<form/);
+  assert.doesNotMatch(home, /EDITOR/, 'the editor is not served');
   res = await get('/some/page?x=1');
   assert.equal(res.headers.get('location'), '/login?next=%2Fsome%2Fpage%3Fx%3D1');
   res = await get('/assets/app-123.js', '', '*/*');
@@ -169,7 +174,59 @@ test('login, wrong password, logout', async () => {
 
   res = await post('/api/logout', {}, cookie);
   assert.match(res.headers.get('set-cookie') ?? '', /Max-Age=0/);
-  assert.equal((await get('/', cookie)).status, 302, 'the old cookie no longer works');
+  res = await get('/', cookie);
+  assert.doesNotMatch(await res.text(), /EDITOR/, 'the old cookie no longer works');
+});
+
+test('the landing page is ready for search engines and link previews', async () => {
+  const html = await (await get('/', '', 'text/html')).text();
+  assert.match(html, /<title>[^<]*R Shiny[^<]*<\/title>/);
+  assert.match(html, /<meta\s+name="description"\s+content="[^"]{80,170}"/);
+  // Without SITE_URL the address comes from the request
+  assert.ok(html.includes(`<link rel="canonical" href="${base}/" />`));
+  assert.ok(html.includes(`<meta property="og:image" content="${base}/static/og-image.png" />`));
+  assert.doesNotMatch(html, /\{\{/, 'no placeholders left');
+  const ld = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map((m) => JSON.parse(m[1]));
+  assert.deepEqual(
+    ld.map((d) => d['@type']),
+    ['SoftwareApplication', 'FAQPage'],
+  );
+  // Every FAQ answer in the structured data is also visible on the page
+  for (const q of ld[1].mainEntity) assert.ok(html.includes(`<summary>${q.name}</summary>`), q.name);
+
+  let res = await get('/robots.txt', '', '*/*');
+  assert.equal(res.status, 200);
+  const robots = await res.text();
+  assert.match(robots, /Disallow: \/api\//);
+  assert.ok(robots.includes(`Sitemap: ${base}/sitemap.xml`));
+  res = await get('/sitemap.xml', '', '*/*');
+  assert.match(res.headers.get('content-type') ?? '', /xml/);
+  assert.ok((await res.text()).includes(`<loc>${base}/</loc>`));
+
+  res = await get('/static/og-image.png', '', 'image/*');
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('content-type'), 'image/png');
+  res = await get('/static/editor-screenshot.webp', '', 'image/*');
+  assert.equal(res.headers.get('content-type'), 'image/webp');
+  for (const bad of ['/static/%2e%2e%2fapp.ts', '/static/..%2fapp.ts', '/static/missing.png', '/static/'])
+    assert.equal((await get(bad, '', '*/*')).status, 404, bad);
+});
+
+test('SITE_URL sets the public address', async () => {
+  const cfg = loadConfig({ DIST_DIR: dist, SITE_URL: 'https://droptoapp.com/' } as NodeJS.ProcessEnv);
+  assert.equal(cfg.siteUrl, 'https://droptoapp.com');
+  const other = createApp(cfg, db);
+  const srv = createServer((req, res) => void other.handle(req, res));
+  await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+  const addr = srv.address();
+  const url = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}`;
+  try {
+    const html = await (await fetch(url + '/')).text();
+    assert.ok(html.includes('<link rel="canonical" href="https://droptoapp.com/" />'));
+    assert.ok((await (await fetch(url + '/robots.txt')).text()).includes('Sitemap: https://droptoapp.com/sitemap.xml'));
+  } finally {
+    srv.close();
+  }
 });
 
 test('repeated failed logins are rate limited', async () => {

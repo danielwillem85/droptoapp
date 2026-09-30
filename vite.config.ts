@@ -1,8 +1,8 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// During `npm run dev`, Vite serves the editor and forwards the account pages
-// and API to the DropToApp server (server/index.ts).
+// During `npm run dev`, Vite serves the editor and forwards the landing/login page,
+// its images and the API to the DropToApp server (server/index.ts).
 const server = `http://127.0.0.1:${process.env.PORT || 3000}`;
 
 export default defineConfig({
@@ -13,6 +13,9 @@ export default defineConfig({
     proxy: {
       '/api': server,
       '/login': server,
+      '/static': server,
+      '/robots.txt': server,
+      '/sitemap.xml': server,
     },
   },
 });
