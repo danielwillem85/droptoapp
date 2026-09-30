@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // During `npm run dev`, Vite serves the editor and forwards the account pages
-// and API to the TruthEditor server (server/index.ts).
+// and API to the DropToApp server (server/index.ts).
 const server = `http://127.0.0.1:${process.env.PORT || 3000}`;
 
 export default defineConfig({

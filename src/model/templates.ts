@@ -10,7 +10,7 @@ const node = (type: UINode['type'], props: UINode['props'] = {}, children: UINod
 
 export function emptyProject(): Project {
   return {
-    format: 'truth-editor/v1',
+    format: 'droptoapp/v1',
     root: node('page', { title: 'My Shiny app', layout: 'page_sidebar', theme: 'default', setup: '', serverCode: '' }, [
       node('sidebar', { title: '', width: 250, position: 'left' }),
       node('main'),
@@ -21,7 +21,7 @@ export function emptyProject(): Project {
 /** The classic "Old Faithful" example, so a new user sees something working right away. */
 export function starterProject(): Project {
   return {
-    format: 'truth-editor/v1',
+    format: 'droptoapp/v1',
     root: node('page', { title: 'Old Faithful Geyser Data', layout: 'page_sidebar', theme: 'default', setup: '', serverCode: '' }, [
       node('sidebar', { title: 'Controls', width: 250, position: 'left' }, [
         node('sliderInput', { id: 'bins', label: 'Number of bins:', min: 1, max: 50, value: 30, step: '' }),
@@ -59,7 +59,7 @@ export function isProject(x: unknown): x is Project {
   if (!x || typeof x !== 'object') return false;
   const p = x as Project;
   return (
-    p.format === 'truth-editor/v1' &&
+    (p.format === 'droptoapp/v1' || p.format === 'truth-editor/v1') &&
     !!p.root &&
     p.root.type === 'page' &&
     Array.isArray(p.root.children) &&

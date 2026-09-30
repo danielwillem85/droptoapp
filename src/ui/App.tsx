@@ -15,7 +15,9 @@ import type { User } from './auth';
 import { openTextFile, saveTextFile, storage } from './platform';
 import { PropertiesPanel } from './PropertiesPanel';
 
-const AUTOSAVE_PREFIX = 'truth-editor:autosave';
+const AUTOSAVE_PREFIX = 'droptoapp:autosave';
+/** Keys used before the rename (per user, and from before accounts existed). */
+const LEGACY_AUTOSAVE_PREFIX = 'truth-editor:autosave';
 type View = 'design' | 'split' | 'code';
 type Device = 'desktop' | 'tablet' | 'phone';
 const DEVICE_WIDTH: Record<Device, number | null> = { desktop: null, tablet: 820, phone: 400 };
@@ -38,9 +40,14 @@ function isTyping(el: EventTarget | null): boolean {
 
 export function App({ user }: { user: User }) {
   // Autosave per account, so people sharing a browser don't see each other's designs.
-  // (A design autosaved before accounts existed is picked up once, under AUTOSAVE_PREFIX.)
+  // Designs autosaved by earlier versions (under the old name) are picked up once.
   const autosaveKey = `${AUTOSAVE_PREFIX}:${user.id}`;
-  const [state, dispatch] = useReducer(reducer, null, () => initialState(loadAutosave(autosaveKey) ?? loadAutosave(AUTOSAVE_PREFIX) ?? starterProject()));
+  const [state, dispatch] = useReducer(reducer, null, () => initialState(
+      loadAutosave(autosaveKey) ??
+        loadAutosave(`${LEGACY_AUTOSAVE_PREFIX}:${user.id}`) ??
+        loadAutosave(LEGACY_AUTOSAVE_PREFIX) ??
+        starterProject(),
+    ));
   const [loggingOut, setLoggingOut] = useState(false);
   const [view, setView] = useState<View>('split');
   const [device, setDevice] = useState<Device>('desktop');
@@ -59,7 +66,7 @@ export function App({ user }: { user: User }) {
   // Autosave (debounced).
   useEffect(() => {
     const t = setTimeout(() => {
-      const project: Project = { format: 'truth-editor/v1', root: state.root, code: state.codeDraft ?? undefined };
+      const project: Project = { format: 'droptoapp/v1', root: state.root, code: state.codeDraft ?? undefined };
       storage.save(autosaveKey, JSON.stringify(project));
     }, 300);
     return () => clearTimeout(t);
@@ -103,16 +110,16 @@ export function App({ user }: { user: User }) {
     }
     try {
       const parsed: unknown = JSON.parse(file.text);
-      if (!isProject(parsed)) throw new Error('not a TruthEditor project');
+      if (!isProject(parsed)) throw new Error('not a DropToApp project');
       dispatch({ type: 'load', project: parsed });
       flash(`Opened ${file.name}`);
     } catch {
-      flash(`${file.name} is not a TruthEditor project or R script`);
+      flash(`${file.name} is not a DropToApp project or R script`);
     }
   };
 
   const save = () => {
-    const project: Project = { format: 'truth-editor/v1', root: state.root, code: state.codeDraft ?? undefined };
+    const project: Project = { format: 'droptoapp/v1', root: state.root, code: state.codeDraft ?? undefined };
     const name = String(state.root.props.title || 'shiny-app').replace(/[^\w-]+/g, '-').toLowerCase();
     saveTextFile(`${name}.shinydesign.json`, JSON.stringify(project, null, 2), 'application/json');
   };
@@ -125,7 +132,7 @@ export function App({ user }: { user: User }) {
       <div className={`app view-${view}`}>
         <header className="toolbar">
           <div className="brand">
-            <span className="logo">◆</span> TruthEditor <span className="brand-sub">Shiny UI designer</span>
+            <span className="logo">◆</span> DropToApp <span className="brand-sub">Shiny UI designer</span>
           </div>
           <div className="tool-group">
             <button onClick={() => dispatch({ type: 'load', project: emptyProject() })} title="Start an empty design (undo brings the old one back)">

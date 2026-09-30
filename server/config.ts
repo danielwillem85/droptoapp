@@ -30,7 +30,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, root = process.
   return {
     port: Number(env.PORT) || 3000,
     host: env.HOST || '127.0.0.1',
-    databasePath: resolve(root, env.DATABASE_PATH || 'data/trutheditor.db'),
+    databasePath: resolve(root, env.DATABASE_PATH || 'data/droptoapp.db'),
     distDir: resolve(root, env.DIST_DIR || 'dist'),
     cookieSecure: bool(env.COOKIE_SECURE, false),
     trustProxy: bool(env.TRUST_PROXY, false),

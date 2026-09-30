@@ -1,6 +1,6 @@
-# TruthEditor: a Shiny UI designer (proof of concept)
+# DropToApp: a Shiny UI designer (proof of concept)
 
-TruthEditor lets you design an R Shiny user interface by dragging and dropping
+DropToApp lets you design an R Shiny user interface by dragging and dropping
 components. It writes a runnable `app.R` (Shiny + bslib) as you work.
 
 The editor is built with **TypeScript and React** and runs in the browser. A
@@ -116,7 +116,7 @@ Visitors must register or log in before they can use the editor. The server
 enforces this: without a valid session it only serves the login page, so the
 editor's code is never sent to anonymous visitors.
 
-- **Accounts** live in a SQLite database (`data/trutheditor.db` by default,
+- **Accounts** live in a SQLite database (`data/droptoapp.db` by default,
   created automatically). Passwords are stored as scrypt hashes; log-ins are
   HttpOnly, SameSite cookies whose tokens are stored hashed. Failed log-ins and
   registrations are rate limited (10 per 15 minutes per IP and per email).
@@ -141,28 +141,28 @@ Settings are in `.env` (see `.env.example` for all of them):
 | `BREVO_LIST_ID`                  | Brevo > Contacts > Lists (the list's ID number)          |
 | `NEWSLETTER_CHECKED_BY_DEFAULT`  | Newsletter box ticked on the form (default `false`)      |
 | `PORT`, `HOST`                   | Where the server listens (default `127.0.0.1:3000`)      |
-| `DATABASE_PATH`                  | SQLite file (default `data/trutheditor.db`)              |
+| `DATABASE_PATH`                  | SQLite file (default `data/droptoapp.db`)              |
 | `SESSION_DAYS`                   | How long a log-in lasts (default 30)                     |
 | `COOKIE_SECURE`, `TRUST_PROXY`   | Set both to `true` in production behind nginx + HTTPS    |
 
-To see who signed up: `sqlite3 data/trutheditor.db "select email, newsletter, brevo_status, created_at from users"`.
+To see who signed up: `sqlite3 data/droptoapp.db "select email, newsletter, brevo_status, created_at from users"`.
 
 ## Deploying on Ubuntu
 
 1. Install Node.js 22.13+ (e.g. from NodeSource) and nginx.
-2. Copy the project to the server (e.g. `/opt/trutheditor`), then:
+2. Copy the project to the server (e.g. `/opt/droptoapp`), then:
    ```bash
    npm ci && npm run build
    cp .env.example .env   # fill in Brevo; set COOKIE_SECURE=true and TRUST_PROXY=true
    ```
-3. Run it as a service, `/etc/systemd/system/trutheditor.service`:
+3. Run it as a service, `/etc/systemd/system/droptoapp.service`:
    ```ini
    [Unit]
-   Description=TruthEditor
+   Description=DropToApp
    After=network.target
 
    [Service]
-   WorkingDirectory=/opt/trutheditor
+   WorkingDirectory=/opt/droptoapp
    ExecStart=/usr/bin/npm start
    Restart=on-failure
    User=www-data
@@ -170,7 +170,7 @@ To see who signed up: `sqlite3 data/trutheditor.db "select email, newsletter, br
    [Install]
    WantedBy=multi-user.target
    ```
-   `sudo systemctl enable --now trutheditor` (make sure `www-data` can write to `data/`).
+   `sudo systemctl enable --now droptoapp` (make sure `www-data` can write to `data/`).
 4. Let nginx forward to it (and add HTTPS with `certbot --nginx`):
    ```nginx
    server {
@@ -184,7 +184,7 @@ To see who signed up: `sqlite3 data/trutheditor.db "select email, newsletter, br
        }
    }
    ```
-5. Back up `data/trutheditor.db` (it holds all accounts).
+5. Back up `data/droptoapp.db` (it holds all accounts).
 
 ## Supported components
 

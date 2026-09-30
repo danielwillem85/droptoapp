@@ -13,7 +13,7 @@
  */
 import { BY_R_FN, COMPONENTS, PAGE_LAYOUTS, THEMES, canAccept } from './components';
 import type { ArgSpec, ComponentDef } from './components';
-import { HEADER_COMMENT, INPUTS_COMMENT_PREFIX } from './codegen';
+import { HEADER_COMMENT, INPUTS_COMMENT_PREFIX, LEGACY_HEADER_COMMENTS } from './codegen';
 import { parseWidths } from './rcode';
 import { dedent, fnName, parseR, RParseError, lineCol, text } from './rparse';
 import type { RArg, RNode, Span } from './rparse';
@@ -67,9 +67,9 @@ export function importApp(src: string): Project {
   if (!serverExpr) throw new ImportError('app.R needs a `server <- function(input, output, session) { ... }` assignment.', 1, 1);
 
   const root = ctx.page(uiExpr);
-  root.props.setup = cleanRemainder(cut(src, 0, src.length, handled), [HEADER_COMMENT]);
+  root.props.setup = cleanRemainder(cut(src, 0, src.length, handled), [HEADER_COMMENT, ...LEGACY_HEADER_COMMENTS]);
   root.props.serverCode = ctx.server(serverExpr, root);
-  return { format: 'truth-editor/v1', root };
+  return { format: 'droptoapp/v1', root };
 }
 
 function assignmentTarget(st: RNode): string | null {

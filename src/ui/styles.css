@@ -1498,3 +1498,18 @@ button.link:hover {
   text-overflow: ellipsis;
   color: var(--muted);
 }
+
+/* Keep the toolbar on one line: labels never wrap, and the subtitle makes room on narrower screens. */
+.toolbar button {
+  white-space: nowrap;
+}
+@media (max-width: 1520px) {
+  .brand-sub {
+    display: none;
+  }
+}
+@media (max-width: 1320px) {
+  .account-name {
+    display: none;
+  }
+}

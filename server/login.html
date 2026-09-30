@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Log in · TruthEditor</title>
+    <title>Log in · DropToApp</title>
     <style>
       :root {
         --bg: #f1f2f4;
@@ -210,7 +210,7 @@
   </head>
   <body>
     <main>
-      <div class="brand"><span>◆</span> TruthEditor</div>
+      <div class="brand"><span>◆</span> DropToApp</div>
       <p class="tagline">Design R Shiny apps visually. Log in or create a free account to start.</p>
       <div class="card">
         <div class="tabs" role="tablist">
@@ -233,7 +233,7 @@
           </label>
           <label class="check register-only">
             <input type="checkbox" name="newsletter" {{NEWSLETTER_CHECKED}} />
-            <span>Send me the TruthEditor newsletter with news, tips and updates.</span>
+            <span>Send me the DropToApp newsletter with news, tips and updates.</span>
           </label>
           <div class="error" id="error" role="alert"></div>
           <button type="submit" class="primary" id="submit">Log in</button>
@@ -277,7 +277,7 @@
           tabRegister.setAttribute('aria-selected', String(reg));
           submit.textContent = reg ? 'Create account' : 'Log in';
           form.password.setAttribute('autocomplete', reg ? 'new-password' : 'current-password');
-          document.title = (reg ? 'Create account' : 'Log in') + ' · TruthEditor';
+          document.title = (reg ? 'Create account' : 'Log in') + ' · DropToApp';
           switchText.innerHTML = reg
             ? 'Already have an account? <a data-mode="login">Log in</a>'
             : 'New here? <a data-mode="register">Create an account</a>';

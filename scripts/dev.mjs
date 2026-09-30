@@ -1,4 +1,4 @@
-// `npm run dev`: start the TruthEditor server (accounts API, login page) and
+// `npm run dev`: start the DropToApp server (accounts API, login page) and
 // Vite (the editor, with hot reload) together. Stop both with Ctrl+C.
 import { spawn } from 'node:child_process';
 

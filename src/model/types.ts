@@ -76,7 +76,8 @@ export interface FieldDef {
 
 /** The on-disk project format (what Save/Open read and write). */
 export interface Project {
-  format: 'truth-editor/v1';
+  /** 'truth-editor/v1' is the same format from before the rename; still accepted when opening. */
+  format: 'droptoapp/v1' | 'truth-editor/v1';
   root: UINode;
   /** The app.R text as last edited by hand, if it differs from the generated code. */
   code?: string;

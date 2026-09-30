@@ -1,5 +1,5 @@
 /**
- * A parser for (most of) the R language, written for TruthEditor.
+ * A parser for (most of) the R language, written for DropToApp.
  *
  * It produces a small AST where every node carries its source offsets, so the
  * importer can copy the user's original text (server bodies, helper code) as-is.

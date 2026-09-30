@@ -53,6 +53,7 @@ export function validateRegistration(input: { email: string; password: unknown; 
 
 // ------------------------------------------------------------------ sessions
 
+/** Named after the app's first name (TruthEditor); kept so existing log-ins stay valid. */
 export const SESSION_COOKIE = 'te_session';
 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
