@@ -86,6 +86,10 @@ between them at any time.
 - **While the code has a syntax error,** the canvas shows the last valid
   version and is read-only. A banner shows the line and column of the error;
   *Go to error* jumps there and *Discard edits* throws the edits away.
+  Properties, component insertion, design shortcuts, New/Open/Example and
+  design undo/redo are disabled until you fix or explicitly discard the code
+  edits. You can still inspect the outline, edit or undo text in the code view,
+  save the design, and export the draft.
 - **A visual edit regenerates `app.R` from the design.** Code outside the UI
   (setup code, server code) is kept as written. Formatting and comments
   *inside* the `ui` call are normalised, and the code view says when that is
@@ -134,6 +138,17 @@ anonymous visitors.
   (`subscribed`, `error: …` or `skipped: …`), with the time of the choice in
   `newsletter_at`.
 - **Designs** are still autosaved in the browser, now separately per account.
+- **Account notifications:** every successfully created account triggers a
+  transactional email to `info@droptoapp.com` through Brevo, regardless of the
+  newsletter choice. It includes the name, email, account ID, creation time
+  (UTC), and newsletter choice, without passwords or session tokens. Set
+  `BREVO_SENDER_EMAIL` to a verified Brevo sender (default: `info@droptoapp.com`).
+  This uses `BREVO_API_KEY` and does not require `BREVO_LIST_ID`. Requests run
+  in the background with a 10-second timeout; failures are logged as
+  `[account-notification]` and do not block registration. Delivery is best
+  effort, with no automatic retry. Brevo acceptance does not confirm inbox
+  delivery. See [Brevo's transactional email setup](https://developers.brevo.com/docs/send-a-transactional-email)
+  for the verified-sender requirement.
 
 Settings are in `.env` (see `.env.example` for all of them):
 
@@ -141,6 +156,7 @@ Settings are in `.env` (see `.env.example` for all of them):
 | -------------------------------- | -------------------------------------------------------- |
 | `BREVO_API_KEY`                  | Brevo > SMTP & API > API Keys                            |
 | `BREVO_LIST_ID`                  | Brevo > Contacts > Lists (the list's ID number)          |
+| `BREVO_SENDER_EMAIL`             | Verified notification sender (default `info@droptoapp.com`) |
 | `NEWSLETTER_CHECKED_BY_DEFAULT`  | Newsletter box ticked on the form (default `false`)      |
 | `PORT`, `HOST`                   | Where the server listens (default `127.0.0.1:3000`)      |
 | `DATABASE_PATH`                  | SQLite file (default `data/droptoapp.db`)              |

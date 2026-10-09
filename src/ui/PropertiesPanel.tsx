@@ -15,7 +15,7 @@ export function PropertiesPanel({ issues }: { issues: Issue[] }) {
   const set = (key: string, value: PropValue) => dispatch({ type: 'updateProps', id: node.id, patch: { [key]: value } });
 
   return (
-    <div className="props">
+    <fieldset className="props" disabled={!!state.codeError} aria-label="Component properties">
       <header className="props-header">
         <span className="glyph">{def.glyph}</span>
         <div>
@@ -23,6 +23,10 @@ export function PropertiesPanel({ issues }: { issues: Issue[] }) {
           <div className="props-sub">{def.description}</div>
         </div>
       </header>
+
+      {state.codeError ? (
+        <p className="props-empty">Fix or discard the code edits to enable design changes. You can still save or export your draft.</p>
+      ) : null}
 
       {mine.map((i, k) => (
         <div key={k} className={`issue is-${i.severity}`}>
@@ -106,7 +110,7 @@ export function PropertiesPanel({ issues }: { issues: Issue[] }) {
           </button>
         </div>
       ) : null}
-    </div>
+    </fieldset>
   );
 }
 

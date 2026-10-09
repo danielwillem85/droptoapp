@@ -16,7 +16,7 @@ import {
   validateRegistration,
   verifyPassword,
 } from './auth';
-import { subscribeToNewsletter } from './brevo';
+import { sendAccountNotification, subscribeToNewsletter } from './brevo';
 import type { Config } from './config';
 import type { Db, UserRow } from './db';
 
@@ -158,6 +158,16 @@ export function createApp(cfg: Config, db: Db, opts: AppOptions = {}) {
         )
         .run(email, name, hash, newsletter ? 1 : 0, newsletter ? 1 : 0);
       const created = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid) as unknown as UserRow;
+      // Notify the owner for every new account without delaying registration.
+      const notification = sendAccountNotification(
+        cfg.brevo,
+        { id: created.id, email: created.email, name: created.name, newsletter, createdAt: created.created_at },
+        opts.fetchImpl,
+      ).then((r) => {
+        if (!r.ok) console.warn(`[account-notification] user ${created.id}: ${r.status}`);
+      });
+      background.add(notification);
+      notification.finally(() => background.delete(notification));
       if (newsletter) {
         // Don't keep the new user waiting for Brevo; record the outcome on their row.
         const task = subscribeToNewsletter(cfg.brevo, { email, name }, opts.fetchImpl).then((r) => {

@@ -24,6 +24,8 @@ export interface Config {
     apiKey: string;
     listId: number | null;
     apiUrl: string;
+    /** Verified Brevo sender for account-creation notifications. */
+    senderEmail: string;
   };
 }
 
@@ -46,6 +48,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, root = process.
       apiKey: env.BREVO_API_KEY || '',
       listId: Number.isInteger(listId) && listId > 0 ? listId : null,
       apiUrl: (env.BREVO_API_URL || 'https://api.brevo.com/v3').replace(/\/+$/, ''),
+      senderEmail: env.BREVO_SENDER_EMAIL?.trim() || 'info@droptoapp.com',
     },
   };
 }

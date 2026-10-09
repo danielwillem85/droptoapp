@@ -1,0 +1,179 @@
+{
+  "format": "droptoapp/v1",
+  "root": {
+    "id": "nmuzpn357a",
+    "type": "page",
+    "props": {
+      "title": "Cars workflow audit — edited",
+      "layout": "page_sidebar",
+      "theme": "flatly",
+      "setup": "# Keep this setup comment and helper through visual edits.\ncars <- mtcars\nformat_count <- function(x) paste(x, \"cars\")",
+      "serverCode": "# Shared reactive must survive visual edits.\nselected <- reactive({\n  head(cars, input$rows)\n})"
+    },
+    "children": [
+      {
+        "id": "nmuzpn3573",
+        "type": "sidebar",
+        "props": {
+          "title": "Filters",
+          "width": 250,
+          "position": "left"
+        },
+        "children": [
+          {
+            "id": "nmuzpn3c3f",
+            "type": "selectInput",
+            "props": {
+              "id": "metric",
+              "label": "Metric",
+              "choices": [],
+              "selected": "mpg",
+              "multiple": false
+            },
+            "children": [],
+            "raw": {
+              "choices": "names(cars)"
+            }
+          },
+          {
+            "id": "nmuzpn3c3g",
+            "type": "sliderInput",
+            "props": {
+              "id": "rows",
+              "label": "Rows",
+              "min": 1,
+              "max": 32,
+              "value": 12,
+              "step": ""
+            },
+            "children": [],
+            "extra": "ticks = FALSE"
+          },
+          {
+            "id": "nmuzpn3c3h",
+            "type": "actionButton",
+            "props": {
+              "id": "reset",
+              "label": "Reset rows",
+              "class": "btn-default",
+              "code": "updateSliderInput(session, \"rows\", value = 10)"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "id": "nmuzpn3579",
+        "type": "main",
+        "props": {},
+        "children": [
+          {
+            "id": "nmuzpn3576",
+            "type": "layout_columns",
+            "props": {
+              "col_widths": "4, 8"
+            },
+            "children": [
+              {
+                "id": "nmuzpn3574",
+                "type": "value_box",
+                "props": {
+                  "title": "Dataset",
+                  "value": "",
+                  "theme": "default"
+                },
+                "children": [],
+                "raw": {
+                  "value": "format_count(nrow(cars))"
+                }
+              },
+              {
+                "id": "nmuzpn3c3m",
+                "type": "card",
+                "props": {
+                  "full_screen": false,
+                  "height": "",
+                  "header": "Summary"
+                },
+                "children": [
+                  {
+                    "id": "nmuzpn3c3l",
+                    "type": "textOutput",
+                    "props": {
+                      "id": "summary",
+                      "code": "format_count(nrow(selected()))"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "nmuzpn3c3u",
+            "type": "navset_card_tab",
+            "props": {
+              "title": ""
+            },
+            "children": [
+              {
+                "id": "nmuzpn3c3p",
+                "type": "nav_panel",
+                "props": {
+                  "title": "Plot"
+                },
+                "children": [
+                  {
+                    "id": "nmuzpn3c3o",
+                    "type": "plotOutput",
+                    "props": {
+                      "id": "scatter",
+                      "height": "300px",
+                      "code": "plot(selected()[[input$metric]], main = input$metric)"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "nmuzpn3c3r",
+                "type": "nav_panel",
+                "props": {
+                  "title": "Data"
+                },
+                "children": [
+                  {
+                    "id": "nmuzpn3c3q",
+                    "type": "tableOutput",
+                    "props": {
+                      "id": "table",
+                      "code": "selected()"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "nmuzpn3c3t",
+                "type": "nav_panel",
+                "props": {
+                  "title": "Notes"
+                },
+                "children": [
+                  {
+                    "id": "nmuzpn3c3s",
+                    "type": "rcode",
+                    "props": {
+                      "code": "tags$small(\"Audit note: café, quotes \\\"kept\\\", and Unicode ✓\")"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

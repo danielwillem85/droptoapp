@@ -29,8 +29,9 @@ export function Palette() {
                 <button
                   key={d.key}
                   className="palette-item"
-                  draggable
-                  title={`${d.description}\nDrag onto the canvas, or click to add.`}
+                  disabled={!!state.codeError}
+                  draggable={!state.codeError}
+                  title={state.codeError ? 'Fix or discard the code edits to add components.' : `${d.description}\nDrag onto the canvas, or click to add.`}
                   data-type={d.preset ?? d.type}
                   onDragStart={(e) => startDrag(e, { kind: 'new', componentType: d.type, preset: d.preset })}
                   onDragEnd={endDrag}

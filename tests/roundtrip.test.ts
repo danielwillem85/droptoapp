@@ -9,6 +9,7 @@ import { createNode, findNode, insertNode, walk } from '../src/model/tree';
 import type { UINode } from '../src/model/types';
 import { validate } from '../src/model/validate';
 import { initialState, reducer } from '../src/state/store';
+import type { Action } from '../src/state/store';
 
 const main = (root: UINode) => root.children.find((c) => c.type === 'main')!;
 const sidebar = (root: UINode) => root.children.find((c) => c.type === 'sidebar')!;
@@ -242,6 +243,65 @@ test('editing code updates the design, keeps ids, and visual edits regenerate th
   for (const title of ['A', 'AB', 'ABC']) t = reducer(t, { type: 'setCode', code: base.replace('Old Faithful Geyser Data', title) });
   assert.equal(t.past.length, 1);
   assert.equal(t.root.props.title, 'ABC');
+});
+
+test('invalid drafts resist visual edits, history navigation and project replacement', () => {
+  let valid = initialState(starterProject());
+  valid = reducer(valid, { type: 'updateProps', id: valid.root.id, patch: { title: 'First edit' } });
+  valid = reducer(valid, { type: 'select', id: null });
+  valid = reducer(valid, { type: 'updateProps', id: valid.root.id, patch: { title: 'Second edit' } });
+  valid = reducer(valid, { type: 'undo' });
+  assert.ok(valid.past.length && valid.future.length, 'exercise both history directions');
+  const code = generateApp(valid.root).app + '\nnew_helper <- function(x) {\n  x * 2\n';
+  const locked = reducer(valid, { type: 'setCode', code });
+  assert.ok(locked.codeError);
+  const sb = sidebar(valid.root);
+  const id = sb.children[0].id;
+  const actions: Action[] = [
+    { type: 'updateProps', id: valid.root.id, patch: { title: 'Must not overwrite draft' } },
+    { type: 'setRaw', id, prop: 'value', value: 'nrow(mtcars)' },
+    { type: 'setExtra', id, extra: 'ticks = FALSE' },
+    { type: 'add', componentType: 'textInput', parentId: sb.id, index: 0 },
+    { type: 'placeBeside', targetId: main(valid.root).children[0].id, side: 'right', componentType: 'card' },
+    { type: 'move', id, parentId: sb.id, index: 2 },
+    { type: 'remove', id },
+    { type: 'duplicate', id },
+    { type: 'nudge', id, delta: 1 },
+    { type: 'undo' },
+    { type: 'redo' },
+    { type: 'load', project: emptyProject() },
+  ];
+  for (const action of actions) {
+    assert.notEqual(reducer(valid, action).root, valid.root, `${action.type} would change an unlocked document`);
+    assert.equal(reducer(locked, action), locked, `${action.type} must preserve the entire invalid draft and history`);
+  }
+  const selected = reducer(locked, { type: 'select', id });
+  assert.equal(selected.selectedId, id, 'outline inspection remains available');
+  assert.equal(selected.codeDraft, code);
+  assert.equal(selected.codeError, locked.codeError);
+});
+
+test('correcting or explicitly discarding an invalid draft re-enables visual editing', () => {
+  const original = initialState(starterProject());
+  const validCode = generateApp(original.root).app;
+  const locked = reducer(original, { type: 'setCode', code: validCode + '\nnew_helper <- function(x) {' });
+  for (const action of [{ type: 'setCode', code: validCode }, { type: 'discardCode' }] satisfies Action[]) {
+    const recovered = reducer(locked, action);
+    assert.equal(recovered.codeError, null);
+    const edited = reducer(recovered, { type: 'updateProps', id: recovered.root.id, patch: { title: 'Recovered' } });
+    assert.equal(edited.root.props.title, 'Recovered');
+  }
+});
+
+test('an invalid draft reopened from a saved project is protected until corrected', () => {
+  const project = starterProject();
+  const code = generateApp(project.root).app + '\nnew_helper <- function(x) {';
+  const reopened = initialState({ ...project, code });
+  assert.ok(reopened.codeError);
+  assert.equal(reducer(reopened, { type: 'updateProps', id: reopened.root.id, patch: { title: 'Lost draft' } }), reopened);
+  const corrected = reducer(reopened, { type: 'setCode', code: code + '\n  x * 2\n}\n' });
+  assert.equal(corrected.codeError, null);
+  assert.match(corrected.codeDraft!, /new_helper <- function/);
 });
 
 test('files and app.R from before the rename to DropToApp still open', async () => {

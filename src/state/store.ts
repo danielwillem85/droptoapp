@@ -118,6 +118,13 @@ function numberNewTab(root: UINode, id: string): UINode {
 }
 
 export function reducer(state: EditorState, action: Action): EditorState {
+  // An invalid draft is the only copy of unfinished work. Tree mutations,
+  // history navigation and loading another project must not replace it.
+  // Keep inspection, source editing (including native undo), and explicit
+  // discard available. Guard here as well as in the UI for keyboard/drop events.
+  if (state.codeError && action.type !== 'select' && action.type !== 'setCode' && action.type !== 'discardCode')
+    return state;
+
   switch (action.type) {
     case 'select':
       return { ...state, selectedId: action.id, coalesceKey: null };

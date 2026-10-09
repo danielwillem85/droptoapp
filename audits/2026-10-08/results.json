@@ -1,0 +1,135 @@
+{
+  "browser": "154.0.8037.98",
+  "results": [
+    {
+      "name": "Register and enter production editor",
+      "pass": true
+    },
+    {
+      "name": "Import existing app.R byte-for-byte",
+      "pass": true
+    },
+    {
+      "name": "Imported document validates",
+      "pass": true
+    },
+    {
+      "name": "Visual edit preserves custom R, setup, server behavior and Unicode",
+      "pass": true,
+      "missing": []
+    },
+    {
+      "name": "UI comments survive visual regeneration",
+      "pass": false,
+      "documentedLimitation": true
+    },
+    {
+      "name": "Undo visual edit restores original handwritten source",
+      "pass": false,
+      "originalUICommentRestored": false
+    },
+    {
+      "name": "Redo restores visual edit",
+      "pass": true
+    },
+    {
+      "name": "Duplicate generates unique input ID",
+      "pass": true,
+      "duplicateId": "rows1"
+    },
+    {
+      "name": "Undo deletion restores duplicate",
+      "pass": true
+    },
+    {
+      "name": "Save downloads a valid design",
+      "pass": true,
+      "filename": "cars-workflow-audit-edited.shinydesign.json"
+    },
+    {
+      "name": "Reopen saved design preserves edited app",
+      "pass": true
+    },
+    {
+      "name": "Reload restores autosaved design",
+      "pass": true
+    },
+    {
+      "name": "Save/reopen preserves handwritten source exactly",
+      "pass": true
+    },
+    {
+      "name": "Syntax error has line/column and canvas pause banner",
+      "pass": true
+    },
+    {
+      "name": "Go to error focuses source editor",
+      "pass": true
+    },
+    {
+      "name": "Correcting syntax restores valid editing state",
+      "pass": true
+    },
+    {
+      "name": "Autosave recovers invalid draft and error banner",
+      "pass": true
+    },
+    {
+      "name": "Properties cannot silently discard invalid draft",
+      "pass": false,
+      "errorBannerRemaining": 0
+    },
+    {
+      "name": "Export preserves displayed source exactly",
+      "pass": true
+    },
+    {
+      "name": "Reimport exported app.R preserves source",
+      "pass": true
+    },
+    {
+      "name": "Expression value box stays within phone preview",
+      "pass": false,
+      "frameRight": 978,
+      "valueBoxRight": 1032.5
+    },
+    {
+      "name": "Immediate reload preserves last edit",
+      "pass": false
+    },
+    {
+      "name": "Autosave storage failure is surfaced to user",
+      "pass": false
+    },
+    {
+      "name": "Exported app parses in real R",
+      "pass": true
+    },
+    {
+      "name": "Exported Shiny app starts",
+      "pass": true
+    },
+    {
+      "name": "Reactive output renders edited default in live R app",
+      "pass": true
+    },
+    {
+      "name": "Reset button updates live reactive output",
+      "pass": true
+    },
+    {
+      "name": "Live table renders filtered rows",
+      "pass": true
+    },
+    {
+      "name": "Live plot renders",
+      "pass": true
+    },
+    {
+      "name": "No uncaught editor browser errors",
+      "pass": true,
+      "errors": []
+    }
+  ],
+  "errors": []
+}

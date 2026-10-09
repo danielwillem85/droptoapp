@@ -340,6 +340,13 @@ export function Canvas({ width }: { width: number | null }) {
   const sidebar = root.children.find((c) => c.type === 'sidebar');
   const main = root.children.find((c) => c.type === 'main');
 
+  useEffect(() => {
+    if (state.codeError) {
+      setTarget(null);
+      endDrag();
+    }
+  }, [state.codeError]);
+
   // Always clean up, even when the drop happens outside the canvas.
   useEffect(() => {
     const clear = () => {
@@ -397,6 +404,7 @@ export function Canvas({ width }: { width: number | null }) {
       ) : null}
       <div
         className="canvas-scroll"
+        inert={!!state.codeError}
         onClick={() => dispatch({ type: 'select', id: null })}
         onDragOver={() => {
           // Nothing below accepted the drag: clear the indicator (no preventDefault = no drop).
@@ -431,4 +439,3 @@ export function Canvas({ width }: { width: number | null }) {
     </DropContext.Provider>
   );
 }
-

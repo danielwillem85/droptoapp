@@ -1,0 +1,49 @@
+library(shiny)
+library(bslib)
+
+# Keep this setup comment and helper through visual edits.
+cars <- mtcars
+format_count <- function(x) paste(x, "cars")
+
+ui <- page_sidebar(
+  title = "Cars workflow audit",
+  theme = bs_theme(bootswatch = "flatly"),
+  sidebar = sidebar(
+    title = "Filters",
+    selectInput("metric", "Metric", choices = names(cars), selected = "mpg"),
+    sliderInput("rows", "Rows", min = 1, max = 32, value = 10, ticks = FALSE),
+    actionButton("reset", "Reset rows")
+  ),
+  # Keep this UI comment when undo restores the original source.
+  layout_columns(
+    col_widths = c(4, 8),
+    value_box(title = "Dataset", value = format_count(nrow(cars))),
+    card(card_header("Summary"), textOutput("summary"))
+  ),
+  navset_card_tab(
+    nav_panel("Plot", plotOutput("scatter", height = "300px")),
+    nav_panel("Data", tableOutput("table")),
+    nav_panel("Notes", tags$small("Audit note: café, quotes \"kept\", and Unicode ✓"))
+  )
+)
+
+server <- function(input, output, session) {
+  # Shared reactive must survive visual edits.
+  selected <- reactive({
+    head(cars, input$rows)
+  })
+  output$summary <- renderText({
+    format_count(nrow(selected()))
+  })
+  output$scatter <- renderPlot({
+    plot(selected()[[input$metric]], main = input$metric)
+  })
+  output$table <- renderTable({
+    selected()
+  })
+  observeEvent(input$reset, {
+    updateSliderInput(session, "rows", value = 10)
+  })
+}
+
+shinyApp(ui, server)

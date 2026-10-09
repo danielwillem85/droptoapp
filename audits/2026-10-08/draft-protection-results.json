@@ -1,0 +1,15 @@
+{
+  "pass": true,
+  "browser": "154.0.8037.98",
+  "checks": [
+    "Invalid draft disables destructive controls and leaves source/recovery/download controls available",
+    "Outline inspection and all destructive keyboard shortcuts preserve unfinished function",
+    "Save and export retain invalid source byte-for-byte",
+    "Autosave reload retains unfinished source and reapplies protection",
+    "Correcting code unlocks visual editing and preserves the completed helper",
+    "Explicit discard restores the valid design and unlocks controls",
+    "Native code-editor undo can repair an invalid draft",
+    "No uncaught browser errors"
+  ],
+  "errors": []
+}

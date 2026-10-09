@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp, safeNext } from '../server/app';
 import { hashPassword, verifyPassword } from '../server/auth';
-import { subscribeToNewsletter } from '../server/brevo';
+import { sendAccountNotification, subscribeToNewsletter } from '../server/brevo';
 import { loadConfig } from '../server/config';
 import { openDb, type Db } from '../server/db';
 
@@ -106,15 +106,25 @@ test('registering with the newsletter creates the user, logs in, and adds them t
   assert.deepEqual(user, { id: 1, email: 'ada@example.com', name: 'Ada', newsletter: true });
 
   await app.idle();
-  assert.equal(brevoCalls.length, 1);
-  assert.equal(brevoCalls[0].url, 'https://brevo.test/v3/contacts');
-  assert.equal(brevoCalls[0].headers['api-key'], 'xkeysib-test');
-  assert.deepEqual(brevoCalls[0].body, { email: 'ada@example.com', listIds: [7], updateEnabled: true, attributes: { FIRSTNAME: 'Ada' } });
+  assert.equal(brevoCalls.length, 2);
+  const contact = brevoCalls.find(call => call.url.endsWith('/contacts'))!;
+  assert.equal(contact.url, 'https://brevo.test/v3/contacts');
+  assert.equal(contact.headers['api-key'], 'xkeysib-test');
+  assert.deepEqual(contact.body, { email: 'ada@example.com', listIds: [7], updateEnabled: true, attributes: { FIRSTNAME: 'Ada' } });
+  const notification = brevoCalls.find(call => call.url.endsWith('/smtp/email'))!;
+  assert.equal(notification.headers['api-key'], 'xkeysib-test');
+  assert.deepEqual(notification.body.to, [{ email: 'info@droptoapp.com' }]);
+  assert.deepEqual(notification.body.sender, { email: 'info@droptoapp.com', name: 'DropToApp' });
+  assert.equal(notification.body.subject, 'New DropToApp account created');
+  assert.match(String(notification.body.textContent), /Name: Ada\nEmail: ada@example.com/);
+  assert.match(String(notification.body.textContent), /Newsletter: Opted in/);
+  assert.doesNotMatch(JSON.stringify(notification.body), /lovelace1815|password_hash|te_session/);
   const row = db.prepare('SELECT * FROM users WHERE email = ?').get('ada@example.com') as Record<string, unknown>;
   assert.equal(row.newsletter, 1);
   assert.ok(row.newsletter_at, 'time of the choice is recorded');
   assert.equal(row.brevo_status, 'subscribed');
   assert.notEqual(row.password_hash, 'lovelace1815');
+  assert.ok(String(notification.body.textContent).includes(`Created at (UTC): ${row.created_at}`));
 
   // the session works: the editor is served, /api/me knows the user, /login redirects
   const cookie = cookieOf(res);
@@ -125,12 +135,16 @@ test('registering with the newsletter creates the user, logs in, and adds them t
   assert.equal((await get('/login?next=/x', cookie)).headers.get('location'), '/x');
 });
 
-test('without the newsletter box ticked, Brevo is not called', async () => {
+test('without newsletter consent, only the owner notification is sent', async () => {
   brevoCalls.length = 0;
   const res = await post('/api/register', { email: 'grace@example.com', password: 'hopper1906', newsletter: false });
   assert.equal(res.status, 201);
   await app.idle();
-  assert.equal(brevoCalls.length, 0);
+  assert.equal(brevoCalls.length, 1);
+  assert.equal(brevoCalls[0].url, 'https://brevo.test/v3/smtp/email');
+  assert.deepEqual(brevoCalls[0].body.to, [{ email: 'info@droptoapp.com' }]);
+  assert.match(String(brevoCalls[0].body.textContent), /Email: grace@example.com/);
+  assert.match(String(brevoCalls[0].body.textContent), /Newsletter: Not opted in/);
   const row = db.prepare('SELECT newsletter, newsletter_at, brevo_status FROM users WHERE email = ?').get('grace@example.com') as Record<string, unknown>;
   assert.deepEqual({ ...row }, { newsletter: 0, newsletter_at: null, brevo_status: null });
 });
@@ -146,6 +160,7 @@ test('a Brevo failure does not block registration and is recorded', async () => 
 });
 
 test('registration is validated', async () => {
+  brevoCalls.length = 0;
   const cases: [unknown, number, RegExp][] = [
     [{ email: 'not-an-email', password: 'longenough' }, 400, /valid email/],
     [{ email: 'a@b.co', password: 'short' }, 400, /at least 8/],
@@ -158,9 +173,12 @@ test('registration is validated', async () => {
   }
   const form = await fetch(base + '/api/register', { method: 'POST', body: 'email=x', headers: { 'content-type': 'application/x-www-form-urlencoded' } });
   assert.equal(form.status, 415, 'only JSON is accepted (blocks cross-site form posts)');
+  await app.idle();
+  assert.equal(brevoCalls.length, 0, 'invalid and duplicate registrations do not send notifications');
 });
 
 test('login, wrong password, logout', async () => {
+  brevoCalls.length = 0;
   let res = await post('/api/login', { email: 'ada@example.com', password: 'wrong-password' });
   assert.equal(res.status, 401);
   assert.equal(((await res.json()) as { error: string }).error, 'Invalid email or password.');
@@ -176,6 +194,8 @@ test('login, wrong password, logout', async () => {
   assert.match(res.headers.get('set-cookie') ?? '', /Max-Age=0/);
   res = await get('/', cookie);
   assert.doesNotMatch(await res.text(), /EDITOR/, 'the old cookie no longer works');
+  await app.idle();
+  assert.equal(brevoCalls.length, 0, 'existing-account logins do not send notifications');
 });
 
 test('the landing page is ready for search engines and link previews', async () => {
@@ -246,7 +266,7 @@ test('redirect targets stay on this site', () => {
 
 test('Brevo is skipped (not called) when .env has no key or list', async () => {
   let called = false;
-  const r = await subscribeToNewsletter({ apiKey: '', listId: null, apiUrl: 'https://x' }, { email: 'a@b.co' }, (async () => {
+  const r = await subscribeToNewsletter(loadConfig({}).brevo, { email: 'a@b.co' }, (async () => {
     called = true;
     return new Response(null, { status: 201 });
   }) as typeof fetch);
@@ -257,4 +277,79 @@ test('Brevo is skipped (not called) when .env has no key or list', async () => {
 test('NEWSLETTER_CHECKED_BY_DEFAULT: off unless set', () => {
   assert.equal(loadConfig({} as NodeJS.ProcessEnv).newsletterCheckedByDefault, false);
   assert.equal(loadConfig({ NEWSLETTER_CHECKED_BY_DEFAULT: 'true' } as NodeJS.ProcessEnv).newsletterCheckedByDefault, true);
+});
+
+const notificationAccount = {
+  id: 42, email: 'new@example.com', name: 'New User', newsletter: false, createdAt: '2026-10-08T12:00:00.000Z',
+};
+
+test('account notification needs no list ID and uses the configured sender', async () => {
+  const cfg = loadConfig({ BREVO_API_KEY: 'test-key', BREVO_SENDER_EMAIL: ' verified@example.com ' });
+  assert.equal(cfg.brevo.listId, null);
+  const result = await sendAccountNotification(cfg.brevo, notificationAccount, async (input, init) => {
+    assert.equal(String(input), 'https://api.brevo.com/v3/smtp/email');
+    assert.equal(init?.method, 'POST');
+    assert.ok(init?.signal instanceof AbortSignal, 'provider calls have a timeout signal');
+    const body = JSON.parse(String(init?.body));
+    assert.deepEqual(body.sender, { email: 'verified@example.com', name: 'DropToApp' });
+    assert.deepEqual(body.to, [{ email: 'info@droptoapp.com' }]);
+    assert.match(body.textContent, /Account ID: 42/);
+    return new Response(JSON.stringify({ messageId: 'test-message' }), { status: 201 });
+  });
+  assert.deepEqual(result, { ok: true, status: 'accepted' });
+});
+
+test('account notification skips missing credentials and catches provider/network errors', async () => {
+  const absent = await sendAccountNotification(loadConfig({}).brevo, notificationAccount, async () => {
+    assert.fail('no network request without an API key');
+  });
+  assert.deepEqual(absent, { ok: false, status: 'skipped: BREVO_API_KEY not set' });
+  const cfg = loadConfig({ BREVO_API_KEY: 'test-key' });
+  for (const [fetchImpl, expected] of [
+    [async () => new Response(JSON.stringify({ code: 'unauthorized', message: 'Invalid key' }), { status: 401 }), /HTTP 401 unauthorized: Invalid key/],
+    [async () => new Response('Unavailable', { status: 503 }), /HTTP 503/],
+    [async () => { throw new Error('Connection failed'); }, /Connection failed/],
+    [async () => { throw new DOMException('Timed out', 'TimeoutError'); }, /Timed out/],
+  ] satisfies [typeof fetch, RegExp][]) {
+    const result = await sendAccountNotification(cfg.brevo, notificationAccount, fetchImpl);
+    assert.equal(result.ok, false);
+    assert.match(result.status, expected);
+  }
+});
+
+test('slow or failing notification delivery does not delay account creation or login', async (t) => {
+  const warnings: string[] = [];
+  t.mock.method(console, 'warn', (message: string) => warnings.push(message));
+  const localDb = openDb(':memory:');
+  let finishEmail!: (res: Response) => void;
+  const delivery = new Promise<Response>(resolve => { finishEmail = resolve; });
+  let calls = 0;
+  const localApp = createApp(loadConfig({ BREVO_API_KEY: 'test-key' }), localDb, {
+    fetchImpl: async () => { calls++; return delivery; },
+  });
+  const localServer = createServer((req, res) => void localApp.handle(req, res));
+  await new Promise<void>(resolve => localServer.listen(0, '127.0.0.1', resolve));
+  const address = localServer.address() as { port: number };
+  const url = `http://127.0.0.1:${address.port}`;
+  try {
+    const res = await fetch(url + '/api/register', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'slow@example.com', password: 'valid-password', newsletter: false }),
+      signal: AbortSignal.timeout(3000),
+    });
+    assert.equal(res.status, 201, 'registration finishes while email is still pending');
+    assert.equal(calls, 1);
+    const cookie = cookieOf(res);
+    assert.equal((await fetch(url + '/api/me', { headers: { cookie } })).status, 200);
+    finishEmail(new Response('Provider unavailable', { status: 503 }));
+    await localApp.idle();
+    assert.ok(warnings.some(message => message.includes('[account-notification] user 1: error: HTTP 503')));
+    assert.equal((await fetch(url + '/api/me', { headers: { cookie } })).status, 200, 'failure leaves the account usable');
+  } finally {
+    finishEmail(new Response(null, { status: 201 }));
+    await localApp.idle();
+    localServer.closeAllConnections();
+    await new Promise<void>(resolve => localServer.close(() => resolve()));
+    localDb.close();
+  }
 });

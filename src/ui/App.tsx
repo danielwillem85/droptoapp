@@ -52,6 +52,8 @@ export function App({ user }: { user: User }) {
   const [view, setView] = useState<View>('split');
   const [device, setDevice] = useState<Device>('desktop');
   const [message, setMessage] = useState<string | null>(null);
+  const draftLocked = !!state.codeError;
+  const draftLockHint = 'Fix or discard the code edits first. You can still save or export your draft.';
 
   const generated = useMemo(() => generateApp(state.root).app, [state.root]);
   // What the user sees and exports: their hand-edited app.R if there is one.
@@ -135,22 +137,22 @@ export function App({ user }: { user: User }) {
             <span className="logo">◆</span> DropToApp <span className="brand-sub">Shiny UI designer</span>
           </div>
           <div className="tool-group">
-            <button onClick={() => dispatch({ type: 'load', project: emptyProject() })} title="Start an empty design (undo brings the old one back)">
+            <button disabled={draftLocked} onClick={() => dispatch({ type: 'load', project: emptyProject() })} title={draftLocked ? draftLockHint : 'Start an empty design (undo brings the old one back)'}>
               New
             </button>
-            <button onClick={() => dispatch({ type: 'load', project: starterProject() })} title="Load the Old Faithful example">
+            <button disabled={draftLocked} onClick={() => dispatch({ type: 'load', project: starterProject() })} title={draftLocked ? draftLockHint : 'Load the Old Faithful example'}>
               Example
             </button>
-            <button onClick={open} title="Open a saved design (.json) or an existing app.R">
+            <button disabled={draftLocked} onClick={open} title={draftLocked ? draftLockHint : 'Open a saved design (.json) or an existing app.R'}>
               Open…
             </button>
             <button onClick={save}>Save</button>
           </div>
           <div className="tool-group">
-            <button disabled={!state.past.length} onClick={() => dispatch({ type: 'undo' })} title="Undo (Ctrl+Z)">
+            <button disabled={draftLocked || !state.past.length} onClick={() => dispatch({ type: 'undo' })} title={draftLocked ? draftLockHint : 'Undo (Ctrl+Z)'}>
               ↶ Undo
             </button>
-            <button disabled={!state.future.length} onClick={() => dispatch({ type: 'redo' })} title="Redo (Ctrl+Y)">
+            <button disabled={draftLocked || !state.future.length} onClick={() => dispatch({ type: 'redo' })} title={draftLocked ? draftLockHint : 'Redo (Ctrl+Y)'}>
               ↷ Redo
             </button>
           </div>

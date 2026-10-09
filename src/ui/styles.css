@@ -322,7 +322,15 @@ button.danger {
 
 /* ---------------------------------------------------------------- properties */
 .props {
+  border: 0;
+  margin: 0;
+  min-width: 0;
   padding: 0 14px 20px;
+}
+.props:disabled input,
+.props:disabled select,
+.props:disabled textarea {
+  opacity: 0.6;
 }
 .props-header {
   display: flex;
