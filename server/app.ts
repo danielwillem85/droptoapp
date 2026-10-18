@@ -17,6 +17,8 @@ import {
   verifyPassword,
 } from './auth';
 import { sendAccountNotification, subscribeToNewsletter } from './brevo';
+import { renderGalleryIndex, renderNotFound, renderTemplatePage, templateCards } from './gallery';
+import { TEMPLATES, templateBySlug } from '../src/model/gallery';
 import type { Config } from './config';
 import type { Db, UserRow } from './db';
 
@@ -86,7 +88,18 @@ export function createApp(cfg: Config, db: Db, opts: AppOptions = {}) {
     return `${proto}://${host}`;
   }
 
-  const landingPage = (req: IncomingMessage) => loginTemplate.replaceAll('{{SITE_URL}}', siteUrl(req));
+  const landingTemplate = loginTemplate.replace('{{TEMPLATE_CARDS}}', templateCards(3));
+  const landingPage = (req: IncomingMessage) => landingTemplate.replaceAll('{{SITE_URL}}', siteUrl(req));
+
+  /** Public HTML pages that only depend on the site address, rendered once per address. */
+  const pageCache = new Map<string, string>();
+  const cached = (key: string, render: () => string) => {
+    let html = pageCache.get(key);
+    if (html === undefined) pageCache.set(key, (html = render()));
+    return html;
+  };
+  const sendPage = (res: ServerResponse, status: number, html: string) =>
+    send(res, status, html, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=600' });
 
   const clientIp = (req: IncomingMessage) =>
     (cfg.trustProxy && (req.headers['x-real-ip'] as string)) || req.socket.remoteAddress || 'unknown';
@@ -133,7 +146,10 @@ export function createApp(cfg: Config, db: Db, opts: AppOptions = {}) {
   async function api(req: IncomingMessage, res: ServerResponse, path: string, token: string | undefined, user: UserRow | null) {
     const route = `${req.method} ${path}`;
 
-    if (route === 'GET /api/me') return user ? json(res, 200, { user: publicUser(user) }) : json(res, 401, { error: 'Not logged in.' });
+    if (route === 'GET /api/me')
+      return user
+        ? json(res, 200, { user: publicUser(user), settings: { shinyliveUrl: cfg.shinyliveUrl } })
+        : json(res, 401, { error: 'Not logged in.' });
 
     if (route === 'POST /api/logout') {
       deleteSession(db, token);
@@ -228,8 +244,8 @@ export function createApp(cfg: Config, db: Db, opts: AppOptions = {}) {
   }
 
   function servePublic(res: ServerResponse, name: string) {
-    // Flat folder, plain file names only: no sub-folders, no "..".
-    if (!/^[\w-]+\.[a-z0-9]+$/i.test(name)) throw new HttpError(404, 'Not found.');
+    // Plain file names only (and the templates/ folder): no other sub-folders, no "..".
+    if (!/^(templates\/)?[\w-]+\.[a-z0-9]+$/i.test(name)) throw new HttpError(404, 'Not found.');
     const file = join(PUBLIC_DIR, name);
     if (!existsSync(file) || !statSync(file).isFile()) throw new HttpError(404, 'Not found.');
     send(res, 200, readFileSync(file), {
@@ -261,10 +277,29 @@ export function createApp(cfg: Config, db: Db, opts: AppOptions = {}) {
         return send(
           res,
           200,
-          `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>${siteUrl(req)}/</loc></url>\n</urlset>\n`,
+          `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${['/', '/templates', ...TEMPLATES.map((t) => `/templates/${t.slug}`)]
+            .map((p) => `  <url><loc>${siteUrl(req)}${p}</loc></url>\n`)
+            .join('')}</urlset>\n`,
           { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' },
         );
       if (path.startsWith('/static/')) return servePublic(res, path.slice('/static/'.length));
+
+      // The template gallery: public pages for everyone, logged in or not.
+      if (path === '/templates/') return send(res, 301, '', { Location: '/templates' });
+      if (path === '/templates') return sendPage(res, 200, cached(`index ${siteUrl(req)}`, () => renderGalleryIndex(siteUrl(req))));
+      const tpl = path.match(/^\/templates\/([^/]+)(\/app\.R)?$/);
+      if (tpl) {
+        const t = templateBySlug(decodeURIComponent(tpl[1]));
+        if (!t) return sendPage(res, 404, cached(`404 ${siteUrl(req)}`, () => renderNotFound(siteUrl(req))));
+        if (tpl[2])
+          return send(res, 200, t.code, {
+            'Content-Type': 'text/plain; charset=utf-8',
+            'Content-Disposition': 'attachment; filename="app.R"',
+            'Cache-Control': 'public, max-age=600',
+          });
+        const site = siteUrl(req);
+        return sendPage(res, 200, cached(`${t.slug} ${site}`, () => renderTemplatePage(t, site, cfg.shinyliveUrl)));
+      }
 
       // Logged-out visitors get the landing page (with the login and registration form) at / and /login.
       if (path === '/login') {

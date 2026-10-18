@@ -74,7 +74,10 @@ test('every palette component generates balanced R code', () => {
       assert.equal(main(root).children.length, 1, `${def.type} was not inserted`);
       const { app } = generateApp(root);
       assertBalancedR(app);
-      if (def.renderFn || def.server) assert.match(app, def.type === 'actionButton' ? /observeEvent\(input\$button1/ : /output\$\w+ <- render/);
+      if (def.renderFn || def.server) {
+        const fn = def.type === 'actionButton' ? 'observeEvent' : def.renderFn!;
+        assert.ok(app.includes(def.type === 'actionButton' ? `${fn}(input$button1` : ` <- ${fn}(`), `${def.type}: server code uses ${fn}`);
+      }
       assert.deepEqual(validate(root).filter((i) => i.severity === 'error'), [], def.type);
     }
   }

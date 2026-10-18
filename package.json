@@ -9,7 +9,7 @@
     "build": "tsc && vite build",
     "start": "node --disable-warning=ExperimentalWarning --import tsx server/index.ts",
     "typecheck": "tsc",
-    "test": "node --disable-warning=ExperimentalWarning --import tsx --test tests/model.test.ts tests/roundtrip.test.ts tests/grids.test.ts tests/tabs.test.ts tests/server.test.ts"
+    "test": "node --disable-warning=ExperimentalWarning --import tsx --test tests/model.test.ts tests/roundtrip.test.ts tests/grids.test.ts tests/tabs.test.ts tests/shinylive.test.ts tests/components.test.ts tests/gallery.test.ts tests/server.test.ts"
   },
   "dependencies": {
     "react": "^19.1.0",

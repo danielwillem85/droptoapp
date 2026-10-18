@@ -104,6 +104,50 @@ function PlotPlaceholder({ height }: { height: string }) {
   );
 }
 
+function ScatterPlaceholder({ height }: { height: string }) {
+  const pts = [
+    [20, 70], [32, 62], [41, 66], [55, 50], [63, 54], [72, 41], [86, 44], [97, 33], [108, 37], [121, 26],
+    [133, 30], [146, 22], [158, 25], [171, 17], [186, 20], [199, 13], [214, 16], [228, 10], [241, 14], [258, 8],
+  ];
+  return (
+    <svg className="sp-plot-svg sp-plotly-svg" viewBox="0 0 280 100" preserveAspectRatio="none" style={{ height }} aria-hidden>
+      {[25, 50, 75].map((y) => (
+        <line key={y} x1="12" y1={y} x2="276" y2={y} className="grid" />
+      ))}
+      <line x1="12" y1="94" x2="276" y2="94" className="axis" />
+      {pts.map(([x, y], i) => (
+        <circle key={i} cx={x} cy={y + 12} r="2.6" className="dot" />
+      ))}
+    </svg>
+  );
+}
+
+/**
+ * A value box's value. When it comes from the server (value = textOutput("n")), show a placeholder
+ * number with the output's name; other R expressions are shown as (small) code.
+ */
+function ValueBoxValue({ node }: { node: UINode }) {
+  const raw = node.raw?.value?.trim();
+  if (!raw) return <div className="sp-vb-value">{str(node.props, 'value')}</div>;
+  const out = raw.match(/^(textOutput|uiOutput|htmlOutput)\(\s*["']([\w.]+)["']\s*\)$/);
+  if (out)
+    return (
+      <>
+        <div className="sp-vb-value">
+          <span className="sp-vb-skeleton" aria-hidden />
+        </div>
+        <span className="sp-vb-output">
+          {out[1]} <b>{out[2]}</b>
+        </span>
+      </>
+    );
+  return (
+    <div className="sp-vb-value is-code">
+      <code className="sp-raw">{raw}</code>
+    </div>
+  );
+}
+
 export function LeafPreview({ node }: { node: UINode }): ReactNode {
   const p = node.props;
   const label = <Label text={val(node, 'label')} />;
@@ -188,14 +232,14 @@ export function LeafPreview({ node }: { node: UINode }): ReactNode {
     case 'checkboxGroupInput': {
       const choices = node.raw?.choices ? [`‹${node.raw.choices}›`] : list(p, 'choices');
       const radio = node.type === 'radioButtons';
-      const selected = str(p, 'selected') || (radio ? choices[0] : '');
+      const ticked = radio ? [str(p, 'selected') || choices[0]] : list(p, 'selected');
       return (
         <div className="sp-form-group">
           {label}
           <div className={`sp-options${p.inline === true ? ' is-inline' : ''}`}>
             {choices.map((c) => (
               <span key={c} className="sp-option">
-                <span className={`${radio ? 'sp-radio' : 'sp-check'}${c === selected ? ' is-on' : ''}`} />
+                <span className={`${radio ? 'sp-radio' : 'sp-check'}${ticked.includes(c) ? ' is-on' : ''}`} />
                 {c}
               </span>
             ))}
@@ -220,6 +264,81 @@ export function LeafPreview({ node }: { node: UINode }): ReactNode {
         </div>
       );
     }
+    case 'fileInput':
+      return (
+        <div className="sp-form-group">
+          {label}
+          <div className="sp-file">
+            <span className="sp-file-btn">Browse…</span>
+            <span className="sp-file-name">{p.multiple === true ? 'No files selected' : 'No file selected'}</span>
+          </div>
+        </div>
+      );
+    case 'downloadButton':
+      return (
+        <div className="sp-form-group">
+          <span className="sp-btn btn-default">
+            <span aria-hidden>⤓ </span>
+            {val(node, 'label') || 'Download'}
+          </span>
+        </div>
+      );
+    case 'DTOutput':
+      return (
+        <div className="sp-output sp-dt">
+          <div className="sp-dt-top">
+            <span>
+              Show <span className="sp-dt-box">10</span> entries
+            </span>
+            <span>
+              Search: <span className="sp-dt-box sp-dt-search" />
+            </span>
+          </div>
+          <table className="sp-table">
+            <thead>
+              <tr>
+                <th>col 1 ⇅</th>
+                <th>col 2 ⇅</th>
+                <th>col 3 ⇅</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[0, 1, 2, 3, 4].map((r) => (
+                <tr key={r}>
+                  {[0, 1, 2].map((c) => (
+                    <td key={c}>
+                      <span className="sp-bar" style={{ width: `${35 + ((r * 11 + c * 17) % 50)}%` }} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="sp-dt-bottom">
+            <span>Showing 1 to 10 of … entries</span>
+            <span className="sp-dt-pages">
+              <span>Previous</span>
+              <span className="is-on">1</span>
+              <span>2</span>
+              <span>Next</span>
+            </span>
+          </div>
+          <Tag fn="DT::DTOutput" id={str(p, 'id')} />
+        </div>
+      );
+    case 'plotlyOutput':
+      return (
+        <div className="sp-output sp-plot sp-plotly">
+          <div className="sp-modebar" aria-hidden>
+            <i />
+            <i />
+            <i />
+            <i />
+          </div>
+          <ScatterPlaceholder height={str(p, 'height') || '400px'} />
+          <Tag fn="plotly::plotlyOutput" id={str(p, 'id')} />
+        </div>
+      );
     case 'plotOutput':
       return (
         <div className="sp-output sp-plot">
@@ -275,7 +394,7 @@ export function LeafPreview({ node }: { node: UINode }): ReactNode {
           }}
         >
           <div className="sp-vb-title">{val(node, 'title')}</div>
-          <div className="sp-vb-value">{val(node, 'value')}</div>
+          <ValueBoxValue node={node} />
         </div>
       );
     case 'heading': {

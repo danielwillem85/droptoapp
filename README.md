@@ -18,8 +18,11 @@ cp .env.example .env   # then fill in your Brevo API key and list number
 npm run dev            # open http://localhost:5173, then register an account
 ```
 
+On Windows you can also double-click `start-local.cmd`: it runs `npm run dev`
+with Brevo switched off (local sign-ups send no emails) and opens the browser.
+
 `npm run dev` starts both the account server (port 3000) and Vite (port 5173,
-with hot reload); Vite forwards `/api`, `/login`, `/static` and the robots/sitemap
+with hot reload); Vite forwards `/api`, `/login`, `/templates`, `/static` and the robots/sitemap
 files to the server.
 
 Other scripts:
@@ -34,7 +37,7 @@ Other scripts:
 To run the generated app, click **Export app.R** and then, in R:
 
 ```r
-install.packages(c("shiny", "bslib"))   # once
+install.packages(c("shiny", "bslib"))   # once (plus "DT" / "plotly" if the app uses them)
 shiny::runApp("path/to/folder/with/app.R")
 ```
 
@@ -55,6 +58,16 @@ shiny::runApp("path/to/folder/with/app.R")
 - **Tabs anywhere.** Drop a *Tab panel* on a Tabset card to add a tab, or
   anywhere else (main area, card, grid cell) to start a new Tabset card with
   it. Clicking *Tab panel* adds a tab next to the one you are working in.
+  *Accordion panels* work the same way with *Accordions*.
+- **Multi-page apps.** Set the page layout to `page_navbar`: each *Tab panel*
+  becomes a page in the navigation bar. The content you had becomes the first
+  page; switching back turns several pages into a Tabset card, so nothing is
+  lost. With `page_navbar` the sidebar is optional: drop inputs in it to show
+  it on every page.
+- **Templates.** *Templates…* opens complete starter apps (a KPI dashboard,
+  a data explorer, a feedback form, a multi-page app, a CSV explorer and the
+  Old Faithful example). Opening one replaces the design; Undo brings yours
+  back. See *Template gallery* below.
 - **Move components** by dragging them. A blue line shows where they'll land.
   Rules are enforced: for example, a *Tab panel* can only go inside a
   *Tabset card*, and you can't drop a container into itself.
@@ -67,14 +80,54 @@ shiny::runApp("path/to/folder/with/app.R")
   designs.
 - **Validation** catches invalid or duplicate IDs, bad slider ranges, unused
   sidebar content and similar problems.
-- **Page settings:** `page_sidebar`, `page_fillable` or `page_fluid`, and
-  Bootswatch themes.
+- **Page settings:** `page_sidebar`, `page_navbar`, `page_fillable` or
+  `page_fluid`, and Bootswatch themes.
 - **Responsive preview** at desktop, tablet and phone widths.
+- **Run the real app** in the browser with **▶ Run**, server code included,
+  without installing R (see *Running apps in the browser* below).
 - **Undo/redo**, save/open designs (`*.shinydesign.json`), and autosave in
   the browser.
 
 Keyboard: `Del` deletes · `Ctrl+Z` / `Ctrl+Y` undo/redo · `Ctrl+D` duplicates ·
-`Alt+↑/↓` reorders · `Esc` selects the page.
+`Alt+↑/↓` reorders · `Esc` selects the page · `Ctrl+Shift+Enter` runs (or
+restarts) the app, also while typing in the code.
+
+### Running apps in the browser
+
+**▶ Run** starts the app for real: inputs, outputs, `render*()` functions,
+`observeEvent()` and the rest of the server code all work. It uses
+[shinylive](https://shinylive.io), which runs Shiny for R on
+[webR](https://docs.r-wasm.org/webr/latest/) (R compiled to WebAssembly)
+entirely in the visitor's browser. There is no R on the DropToApp server and
+nothing extra to install.
+
+- The running app takes the canvas's place. In *Split* view the code stays
+  underneath; the Desktop/Tablet/Phone widths apply to the live app too.
+- A run uses the code as it was when it started. After edits the bar says
+  *Code changed since this run*; **↻ Restart** (or `Ctrl+Shift+Enter`) runs
+  the latest version. Switching to *Code* view keeps the app running.
+- Code with a syntax error can't be run; fix or discard the edit first.
+- **New tab ↗** opens the running app on its own; **R console ↗** opens it in
+  shinylive's editor, whose console shows R errors and warnings.
+- The first start downloads R and the app's packages (shiny, bslib and
+  anything it loads with `library()` or `pkg::`), which can take a minute;
+  later runs are usually faster (browser cache). Packages come from the webR
+  repository (repo.r-wasm.org), which has most of CRAN but not packages that
+  need system libraries. Code that reads local files or databases won't find
+  them in the browser.
+
+How it works: `src/model/shinylive.ts` builds a link like
+`https://shinylive.io/r/app/#h=0&code=…` where `code` is `app.R` as JSON,
+compressed with lz-string (`src/model/lzstring.ts`, a port of the library
+shinylive uses). The code travels in the `#fragment`, which browsers never
+send to a server, and shinylive runs it locally. The editor shows that page in
+an iframe (`src/ui/RunPanel.tsx`). If a browser blocks it inside the editor
+(some block service workers in embedded third-party pages), **New tab** works.
+
+By default this uses Posit's public shinylive.io. `SHINYLIVE_URL` in `.env`
+points it at another deployment of the shinylive site instead (it must serve
+the `/r/app/` and `/r/editor/` pages), e.g. a self-hosted copy built from
+[posit-dev/shinylive](https://github.com/posit-dev/shinylive).
 
 ### Visual and code editing
 
@@ -86,7 +139,7 @@ between them at any time.
 - **While the code has a syntax error,** the canvas shows the last valid
   version and is read-only. A banner shows the line and column of the error;
   *Go to error* jumps there and *Discard edits* throws the edits away.
-  Properties, component insertion, design shortcuts, New/Open/Example and
+  Properties, component insertion, design shortcuts, New/Open/Templates and
   design undo/redo are disabled until you fix or explicitly discard the code
   edits. You can still inspect the outline, edit or undo text in the code view,
   save the design, and export the draft.
@@ -162,6 +215,7 @@ Settings are in `.env` (see `.env.example` for all of them):
 | `DATABASE_PATH`                  | SQLite file (default `data/droptoapp.db`)              |
 | `SESSION_DAYS`                   | How long a log-in lasts (default 30)                     |
 | `SITE_URL`                       | Public address for SEO, e.g. `https://droptoapp.com`     |
+| `SHINYLIVE_URL`                  | Where **Run** runs apps (default `https://shinylive.io`) |
 | `COOKIE_SECURE`, `TRUST_PROXY`   | Set both to `true` in production behind nginx + HTTPS    |
 
 To see who signed up: `sqlite3 data/droptoapp.db "select email, newsletter, brevo_status, created_at from users"`.
@@ -190,6 +244,35 @@ CDN never mixes up the landing page and the editor.
 
 After deploying, add the site to Google Search Console and submit
 `https://droptoapp.com/sitemap.xml`.
+
+## Template gallery
+
+The templates live in `src/model/gallery.ts`: a title, a summary, a few
+paragraphs, highlights, tags and the complete `app.R` for each. The same list
+feeds three places:
+
+- **The editor:** *Templates…* (`src/ui/TemplateGallery.tsx`), and
+  `/?template=<slug>`, which opens a template once and then removes the
+  parameter. Logged-out visitors land on the login page first and get the
+  template after signing up.
+- **Public pages** for search engines and sharing (`server/gallery.ts`):
+  `/templates` lists them all, `/templates/<slug>` has a screenshot, the
+  description, the Shiny functions and packages used, the full highlighted
+  `app.R` with *Copy* and *Download* (`/templates/<slug>/app.R`), *Run it in
+  your browser* (shinylive) and *Open in DropToApp*. Each page has its own
+  title, description, canonical link, Open Graph image and JSON-LD
+  (`SoftwareSourceCode`, `BreadcrumbList`). All of them are in `sitemap.xml`,
+  and the landing page links to the first three.
+- **Screenshots** in `server/public/templates/`: `<slug>.webp` (1200×750, for
+  the cards and pages) and `<slug>.png` (1200×630, for link previews). They
+  are pictures of the template on the editor's canvas.
+
+Each template's code is exactly what the editor generates for it, so the page,
+the editor and a Run show the same code (`tests/gallery.test.ts` checks this,
+and that every template is fully visual, uses only shiny, bslib, DT and
+plotly, and has its screenshots). To add or change a template: write the app,
+open it in the editor, paste the generated `app.R` into `gallery.ts` with its
+texts, and save a screenshot of the canvas under both names.
 
 ## Deploying on Ubuntu
 
@@ -234,10 +317,18 @@ After deploying, add the site to Google Search Console and submit
 
 | Group   | Components                                                                                                        |
 | ------- | ----------------------------------------------------------------------------------------------------------------- |
-| Layout  | `card`, grids (`layout_columns`, built with *Column*, *Row*, *2 columns*, *2 rows*), cells (`div()`), `navset_card_tab`, `nav_panel`, `value_box` |
-| Inputs  | `sliderInput`, `numericInput`, `textInput`, `textAreaInput`, `selectInput`, `radioButtons`, `checkboxInput`, `checkboxGroupInput`, `dateInput`, `actionButton` |
-| Outputs | `plotOutput`, `tableOutput`, `textOutput`, `verbatimTextOutput` (each with a `render*()` stub)                    |
-| Content | headings, paragraphs, `hr()`, and **R code** blocks for any other UI expression                              |
+| Pages   | `page_sidebar`, `page_navbar` (pages are `nav_panel`s, optional shared `sidebar`), `page_fillable`, `page_fluid` |
+| Layout  | `card`, grids (`layout_columns`, built with *Column*, *Row*, *2 columns*, *2 rows*), cells (`div()`), `navset_card_tab`, `nav_panel`, `accordion`, `accordion_panel`, `conditionalPanel`, `value_box` |
+| Inputs  | `sliderInput`, `numericInput`, `textInput`, `textAreaInput`, `selectInput`, `radioButtons`, `checkboxInput`, `checkboxGroupInput`, `dateInput`, `actionButton`, `fileInput` |
+| Outputs | `plotOutput`, `tableOutput`, `textOutput`, `verbatimTextOutput`, `DT::DTOutput`, `plotly::plotlyOutput` (each with its `render*()` code), `downloadButton` (with `downloadHandler()`) |
+| Content | headings, paragraphs, `hr()`, `tooltip()` (wraps one component), and **R code** blocks for any other UI expression |
+
+DT and plotly outputs are written with their package prefix (`DT::DTOutput`,
+`DT::renderDT`), so they work without `library()`. Code that uses the short
+names after `library(DT)` / `library(plotly)` is recognised too.
+`downloadHandler(filename = "…", content = function(file) { … })` is shown as
+the download button's *File name* and *Server code*; other forms (e.g. a
+filename computed by a function) are kept as written in *Other server code*.
 
 ## How it's built
 
@@ -253,21 +344,27 @@ src/
     rcode.ts          helpers for R strings, vectors and styler-like call formatting
     validate.ts       problems shown in the UI
     rHighlight.ts     small R tokenizer for syntax colouring
-    templates.ts      blank project and the "Old Faithful" example
+    templates.ts      blank project and the "Old Faithful" starter design
+    gallery.ts        the template gallery: texts and app.R of each template
+    shinylive.ts      Run: shinylive links (app.R in the #fragment), packages used
+    lzstring.ts       lz-string compression, as used by shinylive links
   state/store.ts      reducer with undo/redo history and edit coalescing
   ui/                 React components (canvas, palette, outline, properties, code view)
     platform.ts       file save/open, clipboard, storage (swap for Electron/Tauri APIs)
-    auth.ts           current user, log out
+    auth.ts           current user and server settings, log out
+    RunPanel.tsx      the live app (shinylive iframe), restart and links
+    TemplateGallery.tsx  the Templates… dialog
 server/
   index.ts            entry point (npm start)
-  app.ts              routes: landing page, /static, robots.txt, sitemap.xml, /api/*, the editor
+  app.ts              routes: landing page, /templates, /static, robots.txt, sitemap.xml, /api/*, the editor
+  gallery.ts          the public template pages (/templates, /templates/<slug>)
   auth.ts             scrypt passwords, sessions, rate limiting, cookies
   db.ts               SQLite schema (users, sessions)
   brevo.ts            newsletter sign-up via the Brevo API
   config.ts           settings from .env
   login.html          the landing page with the login / registration form
-  public/             images for the landing page and link previews
-tests/                node:test tests (model, app.R round-trips, accounts API), run with tsx
+  public/             images for the landing page and link previews; templates/ has the template screenshots
+tests/                node:test tests (model, components, app.R round-trips, templates, shinylive links, server), run with tsx
 ```
 
 **To add a component:** add one entry to `defs` in `src/model/components.ts`
@@ -289,11 +386,12 @@ code are all derived from it.
 
 1. **Designs in the account.** Save designs on the server per user, so they
    follow people across browsers and devices.
-2. **Live preview in R.** Start `Rscript -e "shiny::runApp(...)"` from the
-   shell and show the running app in a second webview, reloading on change.
+2. **More from Run.** Upload data files (CSV) alongside `app.R`, show R
+   errors from the running app inside the editor, and optionally self-host
+   shinylive and the webR packages.
 3. **Better code editor.** Swap the built-in editor for CodeMirror or Monaco
    (autocomplete for `input$...` IDs, folding, search), and scroll the code
    to *any* selected component, not only inputs and outputs.
-4. **More components:** `page_navbar`, accordions, `uiOutput`, DT and plotly
-   outputs, `input_switch`, icons in value boxes, and so on.
+4. **More components:** `uiOutput`, `input_switch`, `popover()`, icons in value
+   boxes, `nav_menu()`, and so on. More templates (maps, time series, reports).
 5. **Keep comments inside `ui`** by attaching them to the nearest component.

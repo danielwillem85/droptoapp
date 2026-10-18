@@ -18,6 +18,11 @@ export interface Config {
    * social preview images and sitemap.xml. When empty, it is worked out from each request's Host header.
    */
   siteUrl: string;
+  /**
+   * Where the editor's Run button runs apps: a shinylive site (Shiny for R on webR, in the browser).
+   * Default: Posit's public https://shinylive.io. Can be a self-hosted copy, e.g. /shinylive.
+   */
+  shinyliveUrl: string;
   /** Whether the newsletter box on the registration form starts ticked. */
   newsletterCheckedByDefault: boolean;
   brevo: {
@@ -43,6 +48,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, root = process.
     trustProxy: bool(env.TRUST_PROXY, false),
     sessionDays: Number(env.SESSION_DAYS) || 30,
     siteUrl: (env.SITE_URL || '').trim().replace(/\/+$/, ''),
+    shinyliveUrl: (env.SHINYLIVE_URL || '').trim().replace(/\/+$/, '') || 'https://shinylive.io',
     newsletterCheckedByDefault: bool(env.NEWSLETTER_CHECKED_BY_DEFAULT, false),
     brevo: {
       apiKey: env.BREVO_API_KEY || '',

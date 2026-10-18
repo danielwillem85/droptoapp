@@ -44,8 +44,10 @@ export interface ComponentDef {
   /** Kind of reactive endpoint this component creates. */
   io?: 'input' | 'output';
 
-  /** R function name, when the component is a plain call. */
+  /** R function name, when the component is a plain call. Namespaced (DT::DTOutput) for packages other than shiny/bslib. */
   rFn?: string;
+  /** Other names the same function is written as in existing code (e.g. DTOutput after library(DT)). */
+  rFnAliases?: string[];
   /** The R function's formal arguments, in order ('...' included). Used to match positional args. */
   formals?: string[];
   /** Arguments that map to properties. */
@@ -56,12 +58,18 @@ export interface ComponentDef {
   toR?: (node: UINode, children: string[]) => string;
   /** For outputs: the render function used in the server. */
   renderFn?: string;
+  /** Other names of the render function recognised when opening code (e.g. renderDT for DT::renderDT). */
+  renderFnAliases?: string[];
+  /** Containers that hold at most this many children (a tooltip wraps one component). */
+  maxChildren?: number;
   /** Server code for this component, or null when there is none. */
   server?: (node: UINode) => string | null;
 }
 
-const STRUCTURAL: ComponentType[] = ['page', 'sidebar', 'main'];
-const acceptsContent = (child: ComponentType) => !STRUCTURAL.includes(child) && child !== 'nav_panel';
+const STRUCTURAL: ComponentType[] = ['page', 'sidebar', 'main', 'navbar'];
+/** Panels that only live inside their own container (tabs in a tabset or navbar, sections in an accordion). */
+const PANELS: ComponentType[] = ['nav_panel', 'accordion_panel'];
+const acceptsContent = (child: ComponentType) => !STRUCTURAL.includes(child) && !PANELS.includes(child);
 
 const str = (p: Props, k: string): string => (p[k] === undefined || p[k] === null ? '' : String(p[k]));
 
@@ -86,7 +94,9 @@ function renderServer(node: UINode, fn: string): string | null {
 
 export const THEMES = ['default', 'flatly', 'minty', 'cosmo', 'lux', 'darkly'] as const;
 export const VALUE_BOX_THEMES = ['default', 'primary', 'secondary', 'success', 'info', 'warning', 'danger'];
-export const PAGE_LAYOUTS = ['page_sidebar', 'page_fillable', 'page_fluid'] as const;
+export const PAGE_LAYOUTS = ['page_sidebar', 'page_navbar', 'page_fillable', 'page_fluid'] as const;
+export const TOOLTIP_PLACEMENTS = ['auto', 'top', 'right', 'bottom', 'left'];
+const BUTTON_STYLES = ['btn-default', 'btn-primary', 'btn-success', 'btn-danger', 'btn-outline-primary'];
 
 const defs: ComponentDef[] = [
   // ------------------------------------------------------------------ structure
@@ -103,7 +113,7 @@ const defs: ComponentDef[] = [
         label: 'Layout',
         kind: 'select',
         options: [...PAGE_LAYOUTS],
-        help: 'page_fillable and page_fluid have no sidebar.',
+        help: 'page_navbar: a navigation bar with one Tab panel per page; its sidebar (if it has content) shows on every page. page_fillable and page_fluid have no sidebar.',
       },
       { key: 'theme', label: 'Bootswatch theme', kind: 'select', options: [...THEMES] },
       {
@@ -152,6 +162,16 @@ const defs: ComponentDef[] = [
     fields: [],
     defaults: {},
     accepts: acceptsContent,
+  },
+  {
+    type: 'navbar',
+    label: 'Pages',
+    category: null,
+    glyph: '☰',
+    description: 'The pages of a page_navbar(): one Tab panel per page, shown in the navigation bar.',
+    fields: [],
+    defaults: {},
+    accepts: (c) => c === 'nav_panel' || c === 'rcode',
   },
 
   // ------------------------------------------------------------------ layout
@@ -229,7 +249,8 @@ const defs: ComponentDef[] = [
     label: 'Tab panel',
     category: 'Layout',
     glyph: '⊓',
-    description: 'One tab. Drop it on a Tabset card to add a tab, or anywhere else to start a new Tabset card.',
+    description:
+      'One tab, or one page of a page_navbar. Drop it on a Tabset card or the navigation bar to add a tab, or anywhere else to start a new Tabset card.',
     fields: [{ key: 'title', label: 'Tab title', kind: 'text' }],
     defaults: { title: 'Tab' },
     accepts: acceptsContent,
@@ -256,6 +277,52 @@ const defs: ComponentDef[] = [
       { arg: 'value', prop: 'value', kind: 'string', required: true },
       { arg: 'theme', prop: 'theme', kind: 'string', absent: 'default' },
     ],
+  },
+  {
+    type: 'accordion',
+    label: 'Accordion',
+    category: 'Layout',
+    glyph: '☰',
+    description: 'Collapsible sections stacked on top of each other. Drop Accordion panels into it.',
+    fields: [{ key: 'multiple', label: 'Allow several open sections', kind: 'boolean' }],
+    defaults: { multiple: true },
+    accepts: (c) => c === 'accordion_panel' || c === 'rcode',
+    rFn: 'accordion',
+    formals: ['...', 'id', 'open', 'multiple', 'class', 'width', 'height'],
+    args: [{ arg: 'multiple', prop: 'multiple', kind: 'bool', absent: true }],
+  },
+  {
+    type: 'accordion_panel',
+    label: 'Accordion panel',
+    category: 'Layout',
+    glyph: '▤',
+    description: 'One collapsible section. Drop it on an Accordion to add a section, or anywhere else to start a new Accordion.',
+    fields: [{ key: 'title', label: 'Section title', kind: 'text' }],
+    defaults: { title: 'Section' },
+    accepts: acceptsContent,
+    rFn: 'accordion_panel',
+    formals: ['title', '...', 'value', 'icon'],
+    args: [{ arg: 'title', prop: 'title', kind: 'string', positional: true, required: true }],
+  },
+  {
+    type: 'conditionalPanel',
+    label: 'Conditional panel',
+    category: 'Layout',
+    glyph: '◇',
+    description: 'Shows its content only while a condition on the inputs is true, e.g. when a checkbox is ticked.',
+    fields: [
+      {
+        key: 'condition',
+        label: 'Show when',
+        kind: 'text',
+        help: "A JavaScript condition on the inputs, e.g. input.show_details == true or input.chart == 'Scatter'. Note: input.id, not input$id.",
+      },
+    ],
+    defaults: { condition: 'input.show_more == true' },
+    accepts: acceptsContent,
+    rFn: 'conditionalPanel',
+    formals: ['condition', '...', 'ns'],
+    args: [{ arg: 'condition', prop: 'condition', kind: 'string', positional: true, required: true }],
   },
 
   // ------------------------------------------------------------------ inputs
@@ -443,15 +510,17 @@ const defs: ComponentDef[] = [
       ID_FIELD,
       LABEL_FIELD,
       { key: 'choices', label: 'Choices (one per line)', kind: 'list' },
+      { key: 'selected', label: 'Ticked (one per line)', kind: 'list', optional: true },
       { key: 'inline', label: 'Inline', kind: 'boolean' },
     ],
-    defaults: { label: 'Select all that apply', choices: ['Red', 'Green', 'Blue'], inline: false },
+    defaults: { label: 'Select all that apply', choices: ['Red', 'Green', 'Blue'], selected: [], inline: false },
     rFn: 'checkboxGroupInput',
     formals: ['inputId', 'label', 'choices', 'selected', 'inline', 'width', 'choiceNames', 'choiceValues'],
     args: [
       ID('inputId'),
       LABEL,
       { arg: 'choices', prop: 'choices', kind: 'strings', required: true },
+      { arg: 'selected', prop: 'selected', kind: 'strings' },
       { arg: 'inline', prop: 'inline', kind: 'bool', absent: false },
     ],
   },
@@ -484,7 +553,7 @@ const defs: ComponentDef[] = [
         key: 'class',
         label: 'Style',
         kind: 'select',
-        options: ['btn-default', 'btn-primary', 'btn-success', 'btn-danger', 'btn-outline-primary'],
+        options: BUTTON_STYLES,
       },
       CODE_FIELD('Runs inside observeEvent() when the button is clicked.'),
     ],
@@ -496,6 +565,30 @@ const defs: ComponentDef[] = [
       const body = str(n.props, 'code').trim();
       return body ? `observeEvent(input$${str(n.props, 'id')}, {\n${indent(body)}\n})` : null;
     },
+  },
+  {
+    type: 'fileInput',
+    label: 'File upload',
+    category: 'Inputs',
+    glyph: '⇪',
+    description: 'Upload a file. In the server, input$id$datapath is where the uploaded file is stored.',
+    idPrefix: 'file',
+    io: 'input',
+    fields: [
+      ID_FIELD,
+      LABEL_FIELD,
+      { key: 'accept', label: 'File types (one per line)', kind: 'list', help: 'e.g. .csv. Leave empty to allow any file.' },
+      { key: 'multiple', label: 'Allow several files', kind: 'boolean' },
+    ],
+    defaults: { label: 'Upload a file', accept: ['.csv'], multiple: false },
+    rFn: 'fileInput',
+    formals: ['inputId', 'label', 'multiple', 'accept', 'width', 'buttonLabel', 'placeholder', 'capture'],
+    args: [
+      ID('inputId'),
+      LABEL,
+      { arg: 'accept', prop: 'accept', kind: 'strings' },
+      { arg: 'multiple', prop: 'multiple', kind: 'bool', absent: false },
+    ],
   },
 
   // ------------------------------------------------------------------ outputs
@@ -563,6 +656,78 @@ const defs: ComponentDef[] = [
     args: [ID('outputId')],
     renderFn: 'renderPrint',
   },
+  {
+    type: 'DTOutput',
+    label: 'Data table',
+    category: 'Outputs',
+    glyph: '⊞',
+    description: 'An interactive table with search, sorting and paging, from the DT package.',
+    idPrefix: 'dt',
+    io: 'output',
+    fields: [ID_FIELD, CODE_FIELD('Body of DT::renderDT(). Return a data frame, or a DT::datatable() for more options.')],
+    defaults: { code: 'mtcars' },
+    rFn: 'DT::DTOutput',
+    rFnAliases: ['DTOutput', 'DT::dataTableOutput'],
+    formals: ['outputId', 'width', 'height', 'fill'],
+    args: [ID('outputId')],
+    renderFn: 'DT::renderDT',
+    renderFnAliases: ['renderDT', 'DT::renderDataTable'],
+  },
+  {
+    type: 'plotlyOutput',
+    label: 'Plotly chart',
+    category: 'Outputs',
+    glyph: '◔',
+    description: 'An interactive chart (zoom, hover, pan) from the plotly package.',
+    idPrefix: 'plotly',
+    io: 'output',
+    fields: [
+      ID_FIELD,
+      { key: 'height', label: 'Height', kind: 'text', optional: true, placeholder: '400px' },
+      CODE_FIELD('Body of plotly::renderPlotly(). Return a chart, e.g. plotly::plot_ly(...).'),
+    ],
+    defaults: { height: '', code: 'plotly::plot_ly(mtcars, x = ~wt, y = ~mpg, type = "scatter", mode = "markers")' },
+    rFn: 'plotly::plotlyOutput',
+    rFnAliases: ['plotlyOutput'],
+    formals: ['outputId', 'width', 'height', 'inline', 'reportTheme', 'fill'],
+    args: [ID('outputId'), { arg: 'height', prop: 'height', kind: 'string', absent: '' }],
+    renderFn: 'plotly::renderPlotly',
+    renderFnAliases: ['renderPlotly'],
+  },
+  {
+    type: 'downloadButton',
+    label: 'Download button',
+    category: 'Outputs',
+    glyph: '⇩',
+    description: 'A button that downloads a file the server creates (downloadHandler()).',
+    idPrefix: 'download',
+    io: 'output',
+    fields: [
+      ID_FIELD,
+      LABEL_FIELD,
+      { key: 'filename', label: 'File name', kind: 'text', help: 'Name of the downloaded file, e.g. data.csv.' },
+      CODE_FIELD('Writes the download to `file`, e.g. write.csv(df, file, row.names = FALSE). Runs as content = function(file) { … }.'),
+    ],
+    defaults: { label: 'Download', filename: 'data.csv', code: 'write.csv(mtcars, file, row.names = FALSE)' },
+    rFn: 'downloadButton',
+    formals: ['outputId', 'label', 'class', '...', 'icon'],
+    // label defaults to "Download" in R, so it is left out when it is "Download"
+    args: [ID('outputId'), { arg: 'label', prop: 'label', kind: 'string', positional: true, absent: 'Download' }],
+    renderFn: 'downloadHandler',
+    server: (n) => {
+      const body = str(n.props, 'code').trim();
+      if (!body) return null;
+      const file = str(n.props, 'filename').trim() || 'download';
+      return [
+        `output$${str(n.props, 'id')} <- downloadHandler(`,
+        `  filename = ${rStr(file)},`,
+        '  content = function(file) {',
+        indent(body, 4),
+        '  }',
+        ')',
+      ].join('\n');
+    },
+  },
 
   // ------------------------------------------------------------------ content
   {
@@ -599,6 +764,26 @@ const defs: ComponentDef[] = [
     toR: () => 'hr()',
   },
   {
+    type: 'tooltip',
+    label: 'Tooltip',
+    category: 'Content',
+    glyph: 'ⓘ',
+    description: 'Shows a tip when you hover over the component inside it (bslib tooltip()). Drop one component into it.',
+    fields: [
+      { key: 'text', label: 'Tip text', kind: 'text' },
+      { key: 'placement', label: 'Placement', kind: 'select', options: TOOLTIP_PLACEMENTS },
+    ],
+    defaults: { text: 'More information', placement: 'auto' },
+    accepts: acceptsContent,
+    maxChildren: 1,
+    // tooltip(trigger, "text", placement = ...): the wrapped component comes first.
+    args: [
+      { arg: '...', prop: 'text', kind: 'string', positional: true, required: true },
+      { arg: 'placement', prop: 'placement', kind: 'string', absent: 'auto' },
+    ],
+    toR: (n, children) => rCall('tooltip', [children[0] ?? TOOLTIP_FALLBACK_TRIGGER, ...emitArgs(n)]),
+  },
+  {
     type: 'rcode',
     label: 'R code',
     category: 'Content',
@@ -610,6 +795,9 @@ const defs: ComponentDef[] = [
   },
 ];
 
+/** What a tooltip without a component in it is attached to. */
+export const TOOLTIP_FALLBACK_TRIGGER = 'span("Hover me")';
+
 export const COMPONENTS: Record<ComponentType, ComponentDef> = Object.fromEntries(defs.map((d) => [d.type, d])) as Record<
   ComponentType,
   ComponentDef
@@ -617,8 +805,13 @@ export const COMPONENTS: Record<ComponentType, ComponentDef> = Object.fromEntrie
 
 /** Component definitions keyed by their R function name (for parsing). */
 export const BY_R_FN: Record<string, ComponentDef> = Object.fromEntries(
-  defs.filter((d) => d.rFn && d.type !== 'sidebar').map((d) => [d.rFn!, d]),
+  defs.filter((d) => d.rFn && d.type !== 'sidebar').flatMap((d) => [d.rFn!, ...(d.rFnAliases ?? [])].map((name) => [name, d])),
 );
+
+/** All names a component's render function may be written as (for matching server code). */
+export function renderFnNames(def: ComponentDef): string[] {
+  return def.renderFn ? [def.renderFn, ...(def.renderFnAliases ?? [])] : [];
+}
 
 export const PALETTE_CATEGORIES: Category[] = ['Layout', 'Inputs', 'Outputs', 'Content'];
 
@@ -763,8 +956,20 @@ export function canAccept(parent: ComponentType, child: ComponentType): boolean 
  * around it. Returns the wrapper type, or null when no wrapper is needed/possible.
  */
 export function wrapperFor(parent: ComponentType, child: ComponentType): ComponentType | null {
-  if (child === 'nav_panel' && !canAccept(parent, 'nav_panel') && canAccept(parent, 'navset_card_tab')) return 'navset_card_tab';
+  const wrapper: ComponentType | null = child === 'nav_panel' ? 'navset_card_tab' : child === 'accordion_panel' ? 'accordion' : null;
+  if (wrapper && !canAccept(parent, child) && canAccept(parent, wrapper)) return wrapper;
   return null;
+}
+
+/** Panel types that live only inside their own container. */
+export function isPanel(type: ComponentType): boolean {
+  return PANELS.includes(type);
+}
+
+/** Can `parent` (an actual node) take one more child of type `child`? Also checks maxChildren. */
+export function hasRoomFor(parent: UINode, child: ComponentType): boolean {
+  const max = COMPONENTS[parent.type].maxChildren;
+  return canHold(parent.type, child) && (max === undefined || parent.children.length < max);
 }
 
 /** Can `child` be placed in `parent`, directly or inside an automatic wrapper? */

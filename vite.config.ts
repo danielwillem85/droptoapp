@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // During `npm run dev`, Vite serves the editor and forwards the landing/login page,
-// its images and the API to the DropToApp server (server/index.ts).
+// the template pages, their images and the API to the DropToApp server (server/index.ts).
 const server = `http://127.0.0.1:${process.env.PORT || 3000}`;
 
 export default defineConfig({
@@ -14,6 +14,7 @@ export default defineConfig({
       '/api': server,
       '/login': server,
       '/static': server,
+      '/templates': server,
       '/robots.txt': server,
       '/sitemap.xml': server,
     },

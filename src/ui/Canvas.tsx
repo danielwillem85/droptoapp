@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import type { CSSProperties, DragEvent, MouseEvent, ReactNode } from 'react';
-import { COMPONENTS, isRowsGrid } from '../model/components';
+import { COMPONENTS, isPanel, isRowsGrid } from '../model/components';
 import { parseWidths } from '../model/rcode';
 import { canPlaceBeside, pathTo } from '../model/tree';
 import type { Side } from '../model/tree';
@@ -115,7 +115,7 @@ function NodeView({ node, parent, index, direction, style }: NodeViewProps) {
   const before = target?.parentId === parent.id && target.index === index;
   // Left/right edge zones: in a row of columns they insert a column before/after this one;
   // in a vertical list they put the dropped component beside this one in a new 2-column grid.
-  const hasEdges = node.type !== 'nav_panel' && parent.type !== 'navset_card_tab';
+  const hasEdges = !isPanel(node.type) && !PANEL_CONTAINERS.includes(parent.type);
   const onEdge = (e: DragEvent, side: Side) => {
     if (direction === 'row') dragOverAt(e, parent.id, side === 'left' ? index : index + 1);
     else dragOverBeside(e, node.id, side);
@@ -243,6 +243,29 @@ function NodeBody({ node }: { node: UINode }): ReactNode {
           <ChildList parent={node} hint={`Drop components into “${String(p.title)}”`} />
         </div>
       );
+    case 'accordion':
+      return <AccordionView node={node} />;
+    case 'accordion_panel':
+      return <AccordionPanelBody node={node} />;
+    case 'conditionalPanel':
+      return (
+        <div className="sp-conditional">
+          <div className="sp-conditional-head">
+            Shown when{' '}
+            <code className="sp-raw">{node.raw?.condition ?? (String(p.condition ?? '').trim() || '…')}</code>
+          </div>
+          <ChildList parent={node} hint="Drop components to show conditionally" />
+        </div>
+      );
+    case 'tooltip':
+      return (
+        <div className="sp-tooltip">
+          <ChildList parent={node} hint="Drop the component this tip explains" />
+          <div className={`sp-tooltip-bubble is-${String(p.placement || 'auto')}`}>
+            {node.raw?.text ? <code className="sp-raw">{node.raw.text}</code> : String(p.text ?? '')}
+          </div>
+        </div>
+      );
     default:
       return <LeafPreview node={node} />;
   }
@@ -250,30 +273,34 @@ function NodeBody({ node }: { node: UINode }): ReactNode {
 
 // ------------------------------------------------------------------ tabsets
 
-function NavsetView({ node }: { node: UINode }) {
-  const { state, dispatch } = useEditor();
-  const { target } = useDrop();
-  const dragOverAt = useDragOverAt();
-  const [active, setActive] = useState<string | null>(null);
+/** Containers whose children are panels (no "place beside" edges on their children). */
+const PANEL_CONTAINERS: UINode['type'][] = ['navset_card_tab', 'navbar', 'accordion'];
 
+/** Which panel of a tabset/navbar is showing: the one holding the selection, else the last clicked, else the first. */
+function useActivePanel(node: UINode) {
+  const { state } = useEditor();
+  const [active, setActive] = useState<string | null>(null);
   const selPath = state.selectedId ? pathTo(node, state.selectedId) : [];
   const selectedPanel = selPath.length > 1 ? selPath[1] : null;
   useEffect(() => {
     if (selectedPanel) setActive(selectedPanel);
   }, [selectedPanel]);
-
   const panels = node.children;
-  const activeId = selectedPanel ?? (panels.some((c) => c.id === active) ? active : panels[0]?.id ?? null);
-  const activeIndex = panels.findIndex((c) => c.id === activeId);
+  const activeId = selectedPanel ?? (panels.some((c) => c.id === active) ? active : (panels.find((c) => c.type === 'nav_panel') ?? panels[0])?.id ?? null);
+  return { activeId, activeIndex: panels.findIndex((c) => c.id === activeId), setActive };
+}
 
+/** The clickable, draggable tabs of a tabset or page_navbar, with a drop zone for new tabs. */
+function TabStrip({ node, activeId, setActive, hint }: { node: UINode; activeId: string | null; setActive: (id: string) => void; hint: string }) {
+  const { dispatch } = useEditor();
+  const { target } = useDrop();
+  const dragOverAt = useDragOverAt();
   return (
-    <div className="sp-card sp-navset">
-      <div className="sp-card-header sp-tabs">
-        {hasText(node.props.title) ? <span className="sp-navset-title">{String(node.props.title)}</span> : null}
-        {panels.map((panel, i) => (
+    <>
+        {node.children.map((panel, i) => (
           <div
             key={panel.id}
-            className={`sp-tab${panel.id === activeId ? ' is-active' : ''}${
+            className={`sp-tab${panel.id === activeId ? ' is-active' : ''}${panel.type === 'rcode' && rcodeLabel(panel) === 'nav_spacer()' ? ' is-spacer' : ''}${
               target?.parentId === node.id && target.index === i ? ' drop-before-row' : ''
             }`}
             draggable
@@ -294,11 +321,30 @@ function NavsetView({ node }: { node: UINode }) {
             {panel.type === 'nav_panel' ? (
               panel.raw?.title ? <code className="sp-raw">{panel.raw.title}</code> : String(panel.props.title) || 'Tab'
             ) : (
-              <code className="sp-raw">R code</code>
+              <code className="sp-raw">{rcodeLabel(panel)}</code>
             )}
           </div>
         ))}
-        <AppendZone parent={node} direction="row" hint="Drop a Tab panel here" />
+        <AppendZone parent={node} direction="row" hint={hint} />
+    </>
+  );
+}
+
+/** Short label for an R code item in a tab bar, e.g. nav_spacer(). */
+function rcodeLabel(n: UINode): string {
+  const code = String(n.props.code ?? '').trim();
+  const m = code.match(/^([\w.:]+)\(/);
+  return m ? `${m[1]}()` : 'R code';
+}
+
+function NavsetView({ node }: { node: UINode }) {
+  const { activeId, activeIndex, setActive } = useActivePanel(node);
+  const panels = node.children;
+  return (
+    <div className="sp-card sp-navset">
+      <div className="sp-card-header sp-tabs">
+        {hasText(node.props.title) ? <span className="sp-navset-title">{String(node.props.title)}</span> : null}
+        <TabStrip node={node} activeId={activeId} setActive={setActive} hint="Drop a Tab panel here" />
       </div>
       {activeIndex >= 0 ? (
         <NodeView node={panels[activeIndex]} parent={node} index={activeIndex} direction="column" />
@@ -309,9 +355,103 @@ function NavsetView({ node }: { node: UINode }) {
   );
 }
 
+// ------------------------------------------------------------------ accordions
+
+const AccordionContext = createContext<{ isOpen: (id: string) => boolean; toggle: (id: string) => void }>({
+  isOpen: () => true,
+  toggle: () => {},
+});
+
+function AccordionView({ node }: { node: UINode }) {
+  const { state } = useEditor();
+  // Like bslib: the first section starts open. Sections holding the selection open too.
+  const [open, setOpen] = useState<Set<string>>(() => new Set(node.children[0] ? [node.children[0].id] : []));
+  const selPath = state.selectedId ? pathTo(node, state.selectedId) : [];
+  const selectedPanel = selPath.length > 2 ? selPath[1] : null;
+  useEffect(() => {
+    if (selectedPanel) setOpen((o) => (o.has(selectedPanel) ? o : new Set([...(node.props.multiple === false ? [] : o), selectedPanel])));
+  }, [selectedPanel, node.props.multiple]);
+  const toggle = (id: string) =>
+    setOpen((o) => {
+      const next = new Set(node.props.multiple === false ? [] : o);
+      if (o.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  return (
+    <AccordionContext.Provider value={{ isOpen: (id) => open.has(id), toggle }}>
+      <div className="sp-accordion">
+        <ChildList parent={node} hint="Drop an Accordion panel here" />
+      </div>
+    </AccordionContext.Provider>
+  );
+}
+
+function AccordionPanelBody({ node }: { node: UINode }) {
+  const { isOpen, toggle } = useContext(AccordionContext);
+  const open = isOpen(node.id);
+  return (
+    <div className={`sp-acc-item${open ? ' is-open' : ''}`}>
+      <div className="sp-acc-head" onClick={() => toggle(node.id)}>
+        <span>{node.raw?.title ? <code className="sp-raw">{node.raw.title}</code> : String(node.props.title ?? '')}</span>
+        <span className="sp-acc-chevron" aria-hidden>
+          ⌄
+        </span>
+      </div>
+      {open ? (
+        <div className="sp-acc-body">
+          <ChildList parent={node} hint={`Drop components into “${String(node.props.title)}”`} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 const hasText = (v: unknown) => v !== undefined && v !== null && String(v).trim() !== '';
 
 // ------------------------------------------------------------------ regions + page
+
+/** page_navbar: a navigation bar with one tab per page, an optional sidebar shared by all pages, and the open page. */
+function NavbarPage({ root, navbar, sidebar, sidebarWidth, right }: { root: UINode; navbar: UINode; sidebar?: UINode; sidebarWidth: number; right: boolean }) {
+  const { state, dispatch } = useEditor();
+  const { activeId, activeIndex, setActive } = useActivePanel(navbar);
+  const page = activeIndex >= 0 && navbar.children[activeIndex].type === 'nav_panel' ? navbar.children[activeIndex] : null;
+  const hasSidebar = !!sidebar && sidebar.children.length > 0;
+  return (
+    <>
+      <div
+        className={`sp-navbar sp-navbar-pages${state.selectedId === navbar.id ? ' is-selected' : ''}`}
+        data-node-id={navbar.id}
+        onClick={(e) => {
+          e.stopPropagation();
+          dispatch({ type: 'select', id: navbar.id });
+        }}
+      >
+        <span className="sp-navbar-title">{root.raw?.title ? <code className="sp-raw">{root.raw.title}</code> : String(root.props.title ?? '')}</span>
+        <div className="sp-navbar-tabs">
+          <TabStrip node={navbar} activeId={activeId} setActive={setActive} hint="Drop a Tab panel here to add a page" />
+        </div>
+      </div>
+      <div className={`sp-body${right ? ' is-right' : ''}`}>
+        {sidebar ? (
+          <RegionView
+            node={sidebar}
+            className={`sp-sidebar${hasSidebar ? '' : ' is-optional'}`}
+            style={hasSidebar ? { flexBasis: sidebarWidth, width: sidebarWidth } : undefined}
+            hint="Optional: drop inputs here for a sidebar on every page"
+          />
+        ) : null}
+        <div className="region sp-main">
+          {page ? (
+            <NodeView node={page} parent={navbar} index={activeIndex} direction="column" />
+          ) : (
+            <div className="sp-empty-note">No pages yet. Drag a “Tab panel” from the palette onto the navigation bar.</div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
 
 function RegionView({ node, className, style, hint }: { node: UINode; className: string; style?: CSSProperties; hint: string }) {
   const { state, dispatch } = useEditor();
@@ -339,6 +479,7 @@ export function Canvas({ width }: { width: number | null }) {
   const layout = String(root.props.layout ?? 'page_sidebar');
   const sidebar = root.children.find((c) => c.type === 'sidebar');
   const main = root.children.find((c) => c.type === 'main');
+  const navbar = root.children.find((c) => c.type === 'navbar');
 
   useEffect(() => {
     if (state.codeError) {
@@ -423,15 +564,19 @@ export function Canvas({ width }: { width: number | null }) {
             <span className="frame-layout">{layout}</span>
           </div>
           <div className={`sp-page sp-${layout}${root.props.theme === 'darkly' ? ' is-dark' : ''}`} style={themeStyle(String(root.props.theme ?? 'default'))}>
-            {layout === 'page_sidebar' ? (
+            {navbar ? (
+              <NavbarPage root={root} navbar={navbar} sidebar={sidebar} sidebarWidth={sidebarWidth} right={right} />
+            ) : layout === 'page_sidebar' ? (
               <div className="sp-navbar">{root.raw?.title ? <code className="sp-raw">{root.raw.title}</code> : String(root.props.title ?? '')}</div>
             ) : null}
-            <div className={`sp-body${right ? ' is-right' : ''}`}>
-              {layout === 'page_sidebar' && sidebar ? (
-                <RegionView node={sidebar} className="sp-sidebar" style={{ flexBasis: sidebarWidth, width: sidebarWidth }} hint="Drop inputs here" />
-              ) : null}
-              {main ? <RegionView node={main} className="sp-main" hint="Drop components here to build the main area" /> : null}
-            </div>
+            {navbar ? null : (
+              <div className={`sp-body${right ? ' is-right' : ''}`}>
+                {layout === 'page_sidebar' && sidebar ? (
+                  <RegionView node={sidebar} className="sp-sidebar" style={{ flexBasis: sidebarWidth, width: sidebarWidth }} hint="Drop inputs here" />
+                ) : null}
+                {main ? <RegionView node={main} className="sp-main" hint="Drop components here to build the main area" /> : null}
+              </div>
+            )}
           </div>
         </div>
       </div>

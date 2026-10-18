@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { generateApp } from '../model/codegen';
+import { templateBySlug, templateProject } from '../model/gallery';
+import type { AppTemplate } from '../model/gallery';
 import { emptyProject, isProject, starterProject } from '../model/templates';
 import { walk } from '../model/tree';
 import type { Project } from '../model/types';
@@ -11,9 +13,11 @@ import { EditorContext } from './context';
 import { Outline } from './Outline';
 import { Palette } from './Palette';
 import { logout } from './auth';
-import type { User } from './auth';
+import type { Settings, User } from './auth';
 import { openTextFile, saveTextFile, storage } from './platform';
 import { PropertiesPanel } from './PropertiesPanel';
+import { RunPanel } from './RunPanel';
+import { TemplateGallery } from './TemplateGallery';
 
 const AUTOSAVE_PREFIX = 'droptoapp:autosave';
 /** Keys used before the rename (per user, and from before accounts existed). */
@@ -38,7 +42,7 @@ function isTyping(el: EventTarget | null): boolean {
   return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
 }
 
-export function App({ user }: { user: User }) {
+export function App({ user, settings }: { user: User; settings: Settings }) {
   // Autosave per account, so people sharing a browser don't see each other's designs.
   // Designs autosaved by earlier versions (under the old name) are picked up once.
   const autosaveKey = `${AUTOSAVE_PREFIX}:${user.id}`;
@@ -52,6 +56,10 @@ export function App({ user }: { user: User }) {
   const [view, setView] = useState<View>('split');
   const [device, setDevice] = useState<Device>('desktop');
   const [message, setMessage] = useState<string | null>(null);
+  /** The app is running live (Run button); `runKey` changes force a fresh start. */
+  const [running, setRunning] = useState(false);
+  const [runKey, setRunKey] = useState(0);
+  const [showTemplates, setShowTemplates] = useState(false);
   const draftLocked = !!state.codeError;
   const draftLockHint = 'Fix or discard the code edits first. You can still save or export your draft.';
 
@@ -74,9 +82,22 @@ export function App({ user }: { user: User }) {
     return () => clearTimeout(t);
   }, [state.root, state.codeDraft]);
 
+  const startRun = () => {
+    if (state.codeError) return;
+    if (view === 'code') setView('split');
+    setRunKey((k) => k + 1);
+    setRunning(true);
+  };
+
   // Keyboard shortcuts.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Ctrl+Shift+Enter (as in RStudio): run the app, or restart it with the latest code. Works while typing.
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Enter') {
+        e.preventDefault();
+        startRun();
+        return;
+      }
       if (isTyping(e.target)) return;
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
@@ -94,12 +115,32 @@ export function App({ user }: { user: User }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [state.selectedId]);
+  }, [state.selectedId, state.codeError, view]);
 
-  const flash = (m: string) => {
+  const flash = (m: string, ms = 2500) => {
     setMessage(m);
-    setTimeout(() => setMessage(null), 2500);
+    setTimeout(() => setMessage(null), ms);
   };
+
+  const openTemplate = (t: AppTemplate) => {
+    setShowTemplates(false);
+    dispatch({ type: 'load', project: templateProject(t) });
+    flash(`Opened the ${t.title} template. Undo brings back your previous design.`, 5000);
+  };
+
+  // /?template=<slug> (the "Open in the editor" links on the template pages) opens that template once.
+  const templateParamHandled = useRef(false);
+  useEffect(() => {
+    if (templateParamHandled.current) return;
+    templateParamHandled.current = true;
+    const params = new URLSearchParams(location.search);
+    const t = templateBySlug(params.get('template'));
+    if (!params.has('template')) return;
+    params.delete('template');
+    const rest = params.toString();
+    history.replaceState(null, '', location.pathname + (rest ? `?${rest}` : '') + location.hash);
+    if (t && !state.codeError) openTemplate(t);
+  }, []);
 
   const open = async () => {
     const file = await openTextFile('.R,.r,.json');
@@ -140,8 +181,8 @@ export function App({ user }: { user: User }) {
             <button disabled={draftLocked} onClick={() => dispatch({ type: 'load', project: emptyProject() })} title={draftLocked ? draftLockHint : 'Start an empty design (undo brings the old one back)'}>
               New
             </button>
-            <button disabled={draftLocked} onClick={() => dispatch({ type: 'load', project: starterProject() })} title={draftLocked ? draftLockHint : 'Load the Old Faithful example'}>
-              Example
+            <button disabled={draftLocked} onClick={() => setShowTemplates(true)} title={draftLocked ? draftLockHint : 'Start from a complete example app'}>
+              Templates…
             </button>
             <button disabled={draftLocked} onClick={open} title={draftLocked ? draftLockHint : 'Open a saved design (.json) or an existing app.R'}>
               Open…
@@ -149,11 +190,11 @@ export function App({ user }: { user: User }) {
             <button onClick={save}>Save</button>
           </div>
           <div className="tool-group">
-            <button disabled={draftLocked || !state.past.length} onClick={() => dispatch({ type: 'undo' })} title={draftLocked ? draftLockHint : 'Undo (Ctrl+Z)'}>
-              ↶ Undo
+            <button disabled={draftLocked || !state.past.length} onClick={() => dispatch({ type: 'undo' })} aria-label="Undo" title={draftLocked ? draftLockHint : 'Undo (Ctrl+Z)'}>
+              ↶<span className="btn-label"> Undo</span>
             </button>
-            <button disabled={draftLocked || !state.future.length} onClick={() => dispatch({ type: 'redo' })} title={draftLocked ? draftLockHint : 'Redo (Ctrl+Y)'}>
-              ↷ Redo
+            <button disabled={draftLocked || !state.future.length} onClick={() => dispatch({ type: 'redo' })} aria-label="Redo" title={draftLocked ? draftLockHint : 'Redo (Ctrl+Y)'}>
+              ↷<span className="btn-label"> Redo</span>
             </button>
           </div>
           <span className="spacer" />
@@ -171,6 +212,20 @@ export function App({ user }: { user: User }) {
               </button>
             ))}
           </div>
+          {running ? (
+            <button className="run-button is-running" onClick={() => setRunning(false)} title="Stop the app and go back to the design">
+              ■ Stop
+            </button>
+          ) : (
+            <button
+              className="run-button"
+              disabled={!!state.codeError}
+              onClick={startRun}
+              title={state.codeError ? 'Fix the syntax error in app.R first' : 'Run the app for real, in your browser (Ctrl+Shift+Enter)'}
+            >
+              ▶ Run
+            </button>
+          )}
           <button className="primary" onClick={() => saveTextFile('app.R', code)}>
             Export app.R
           </button>
@@ -196,7 +251,18 @@ export function App({ user }: { user: User }) {
         </aside>
 
         <main className="center">
-          {view !== 'code' ? <Canvas width={DEVICE_WIDTH[device]} /> : null}
+          {running ? (
+            // Stays mounted (hidden) in the code-only view, so switching views doesn't restart R.
+            <RunPanel
+              key={runKey}
+              hidden={view === 'code'}
+              code={code}
+              codeError={state.codeError}
+              width={DEVICE_WIDTH[device]}
+              shinyliveBase={settings.shinyliveUrl}
+            />
+          ) : null}
+          {view !== 'code' && !running ? <Canvas width={DEVICE_WIDTH[device]} /> : null}
           {view !== 'design' ? <CodeView generated={generated} issues={issues} /> : null}
         </main>
 
@@ -204,6 +270,8 @@ export function App({ user }: { user: User }) {
           <div className="panel-title">Properties</div>
           <PropertiesPanel issues={issues} />
         </aside>
+
+        {showTemplates ? <TemplateGallery onPick={openTemplate} onClose={() => setShowTemplates(false)} /> : null}
 
         <footer className="statusbar">
           <span>

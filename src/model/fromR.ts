@@ -11,7 +11,7 @@
  *  - server code that isn't a render*()/observeEvent() for a component on the
  *    canvas goes to the page's "other server code".
  */
-import { BY_R_FN, COMPONENTS, PAGE_LAYOUTS, THEMES, canAccept } from './components';
+import { BY_R_FN, COMPONENTS, PAGE_LAYOUTS, THEMES, TOOLTIP_PLACEMENTS, canAccept, renderFnNames } from './components';
 import type { ArgSpec, ComponentDef } from './components';
 import { HEADER_COMMENT, INPUTS_COMMENT_PREFIX, LEGACY_HEADER_COMMENTS } from './codegen';
 import { parseWidths } from './rcode';
@@ -34,6 +34,10 @@ const PAGE_FORMALS: Record<string, string[]> = {
   page_sidebar: ['...', 'sidebar', 'title', 'fillable', 'fillable_mobile', 'theme', 'window_title', 'lang'],
   page_fillable: ['...', 'padding', 'gap', 'fillable_mobile', 'title', 'theme', 'lang'],
   page_fluid: ['...', 'title', 'theme', 'lang'],
+  page_navbar: [
+    '...', 'title', 'id', 'selected', 'sidebar', 'fillable', 'fillable_mobile', 'gap', 'padding', 'position', 'header', 'footer',
+    'bg', 'inverse', 'underline', 'collapsible', 'fluid', 'theme', 'window_title', 'lang',
+  ],
 };
 
 export function importApp(src: string): Project {
@@ -63,7 +67,7 @@ export function importApp(src: string): Project {
       handled.push(st);
     }
   }
-  if (!uiExpr) throw new ImportError('app.R needs a `ui <- page_sidebar(...)` assignment (or page_fillable / page_fluid).', 1, 1);
+  if (!uiExpr) throw new ImportError('app.R needs a `ui <- page_sidebar(...)` assignment (or page_navbar / page_fillable / page_fluid).', 1, 1);
   if (!serverExpr) throw new ImportError('app.R needs a `server <- function(input, output, session) { ... }` assignment.', 1, 1);
 
   const root = ctx.page(uiExpr);
@@ -195,7 +199,7 @@ class Importer {
   page(expr: RNode): UINode {
     const layout = fnName(expr);
     if (expr.k !== 'call' || !layout || !(PAGE_LAYOUTS as readonly string[]).includes(layout))
-      this.fail('The ui must be built with page_sidebar(), page_fillable() or page_fluid().', expr);
+      this.fail('The ui must be built with page_sidebar(), page_navbar(), page_fillable() or page_fluid().', expr);
     const { byFormal, dots } = matchArgs(expr.args, PAGE_FORMALS[layout]);
     const props: Props = { title: '', layout, theme: 'default', setup: '', serverCode: '' };
     const raw: Record<string, string> = {};
@@ -233,10 +237,11 @@ class Importer {
     for (const [formal, arg] of byFormal) {
       if (!['title', 'theme', 'sidebar'].includes(formal) && arg.value) extras.push(`${formal} = ${this.t(arg.value)}`);
     }
-    const main = this.node('main', {});
+    // page_navbar's unnamed arguments are its pages; for the other layouts they are the main content.
+    const main = this.node(layout === 'page_navbar' ? 'navbar' : 'main', {});
     for (const a of dots) {
       if (a.name) extras.push(this.t(a));
-      else if (a.value) main.children.push(this.child(a.value, 'main'));
+      else if (a.value) main.children.push(this.child(a.value, main.type));
     }
     const root = this.node('page', props, [sidebar, main]);
     if (Object.keys(raw).length) root.raw = raw;
@@ -259,8 +264,36 @@ class Importer {
     }
     if (name === 'p') return onlyString ? this.node('paragraph', { text: (expr.args[0].value as { value: string }).value }) : this.rcode(expr);
     if (name === 'hr') return expr.args.length === 0 ? this.node('divider', {}) : this.rcode(expr);
+    if (name === 'tooltip') return this.tooltip(expr);
     const def = BY_R_FN[name];
     return def ? this.generic(def, expr) : this.rcode(expr);
+  }
+
+  /** tooltip(trigger, "text", placement = ...): the trigger becomes the tooltip's one child. */
+  private tooltip(call: RNode & { k: 'call' }): UINode {
+    const { byFormal, dots } = matchArgs(call.args, ['trigger', '...', 'id', 'placement', 'options']);
+    const trigger = byFormal.get('trigger')?.value;
+    const message = dots.filter((d) => !d.name && d.value);
+    if (!trigger || message.length !== 1) return this.rcode(call);
+    const props: Props = { text: '', placement: 'auto' };
+    const raw: Record<string, string> = {};
+    const msg = message[0].value!;
+    if (msg.k === 'str') props.text = msg.value;
+    else raw.text = dedentExpr(this.src, msg);
+    const extras: string[] = dots.filter((d) => d.name).map((d) => this.t(d));
+    const placement = byFormal.get('placement')?.value;
+    if (placement) {
+      if (placement.k === 'str' && TOOLTIP_PLACEMENTS.includes(placement.value)) props.placement = placement.value;
+      else extras.push(`placement = ${this.t(placement)}`);
+    }
+    for (const f of ['id', 'options']) {
+      const a = byFormal.get(f);
+      if (a?.value) extras.push(`${f} = ${this.t(a.value)}`);
+    }
+    const node = this.node('tooltip', props, [this.child(trigger, 'tooltip')]);
+    if (Object.keys(raw).length) node.raw = raw;
+    if (extras.length) node.extra = extras.join(',\n');
+    return node;
   }
 
   /** A component described by arg specs (see components.ts). */
@@ -346,10 +379,10 @@ class Importer {
         const id = st.lhs.rhs.k === 'ident' ? st.lhs.rhs.name : st.lhs.rhs.k === 'str' ? st.lhs.rhs.value : null;
         const node = id ? outputs.get(id) : undefined;
         const rhs = st.rhs;
-        if (lhs.k === 'ident' && lhs.name === 'output' && node && rhs.k === 'call' && fnName(rhs) === COMPONENTS[node.type].renderFn) {
-          const only = rhs.args.length === 1 && !rhs.args[0].name ? rhs.args[0].value : undefined;
-          if (only) {
-            node.props.code = this.bodyText(only);
+        if (lhs.k === 'ident' && lhs.name === 'output' && node && rhs.k === 'call' && renderFnNames(COMPONENTS[node.type]).includes(fnName(rhs) ?? '')) {
+          const props = node.type === 'downloadButton' ? this.downloadHandler(rhs) : this.renderBody(rhs);
+          if (props) {
+            Object.assign(node.props, props);
             outputs.delete(id!);
             claimed.push(st);
           }
@@ -371,6 +404,24 @@ class Importer {
     }
     if (body.k !== 'block') return claimed.length ? '' : this.t(body);
     return cleanRemainder(cut(this.src, body.s + 1, body.e - 1, claimed), [INPUTS_COMMENT_PREFIX]);
+  }
+
+  /** renderX({ body }) with a single unnamed argument. */
+  private renderBody(call: RNode & { k: 'call' }): Props | null {
+    const only = call.args.length === 1 && !call.args[0].name ? call.args[0].value : undefined;
+    return only ? { code: this.bodyText(only) } : null;
+  }
+
+  /** downloadHandler(filename = "x.csv", content = function(file) { ... }), nothing else. */
+  private downloadHandler(call: RNode & { k: 'call' }): Props | null {
+    const { byFormal, dots } = matchArgs(call.args, ['filename', 'content', 'contentType', 'outputArgs']);
+    const filename = byFormal.get('filename')?.value;
+    const content = byFormal.get('content')?.value;
+    if (dots.length || byFormal.size !== 2 || filename?.k !== 'str' || content?.k !== 'function') return null;
+    const param = content.params.length === 1 ? content.params[0] : undefined;
+    const isFile = !!param && !param.name && param.value?.k === 'ident' && param.value.name === 'file';
+    if (!isFile) return null;
+    return { filename: filename.value, code: this.bodyText(content.body) };
   }
 
   private bodyText(expr: RNode): string {

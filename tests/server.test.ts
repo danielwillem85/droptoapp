@@ -9,6 +9,8 @@ import { hashPassword, verifyPassword } from '../server/auth';
 import { sendAccountNotification, subscribeToNewsletter } from '../server/brevo';
 import { loadConfig } from '../server/config';
 import { openDb, type Db } from '../server/db';
+import { TEMPLATES } from '../src/model/gallery';
+import { decompressFromEncodedURIComponent } from '../src/model/lzstring';
 
 // A fake Brevo that records the requests the server sends.
 const brevoCalls: { url: string; headers: Record<string, string>; body: Record<string, unknown> }[] = [];
@@ -131,7 +133,12 @@ test('registering with the newsletter creates the user, logs in, and adds them t
   assert.match(await (await get('/', cookie)).text(), /EDITOR/);
   assert.equal((await get('/assets/app-123.js', cookie, '*/*')).status, 200);
   assert.equal((await get('/deep/link', cookie)).status, 200, 'client-side routes get index.html');
-  assert.equal(((await (await get('/api/me', cookie, 'application/json')).json()) as { user: { email: string } }).user.email, 'ada@example.com');
+  const me = (await (await get('/api/me', cookie, 'application/json')).json()) as {
+    user: { email: string };
+    settings: { shinyliveUrl: string };
+  };
+  assert.equal(me.user.email, 'ada@example.com');
+  assert.deepEqual(me.settings, { shinyliveUrl: 'https://shinylive.io' }, 'the Run button uses shinylive.io by default');
   assert.equal((await get('/login?next=/x', cookie)).headers.get('location'), '/x');
 });
 
@@ -230,6 +237,65 @@ test('the landing page is ready for search engines and link previews', async () 
   assert.equal(res.headers.get('content-type'), 'image/webp');
   for (const bad of ['/static/%2e%2e%2fapp.ts', '/static/..%2fapp.ts', '/static/missing.png', '/static/'])
     assert.equal((await get(bad, '', '*/*')).status, 404, bad);
+});
+
+test('the template gallery is public, indexable and links into the editor', async () => {
+  const unescape = (h: string) =>
+    h.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+  let res = await get('/templates');
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type') ?? '', /text\/html/);
+  const index = await res.text();
+  assert.match(index, /<h1>R Shiny app templates<\/h1>/);
+  assert.ok(index.includes(`<link rel="canonical" href="${base}/templates" />`));
+  for (const t of TEMPLATES) assert.ok(index.includes(`href="/templates/${t.slug}"`), t.slug);
+  assert.match(index, /"@type":"CollectionPage"/);
+  assert.equal((await get('/templates/')).headers.get('location'), '/templates');
+
+  const t = TEMPLATES.find((x) => x.slug === 'kpi-dashboard')!;
+  res = await get('/templates/kpi-dashboard');
+  assert.equal(res.status, 200);
+  const html = await res.text();
+  assert.match(html, /<title>KPI dashboard template for R Shiny \| DropToApp<\/title>/);
+  assert.ok(html.includes(`<meta name="description" content="${t.summary.replace(/’/g, '’')}" />`));
+  assert.ok(html.includes(`<link rel="canonical" href="${base}/templates/kpi-dashboard" />`));
+  assert.ok(html.includes(`<meta property="og:image" content="${base}/static/templates/kpi-dashboard.png" />`));
+  assert.match(html, /"@type":"SoftwareSourceCode"/);
+  assert.match(html, /"@type":"BreadcrumbList"/);
+  // The code on the page is the template's code, exactly
+  const shown = html.match(/<pre class="code" id="app-code"><code>([\s\S]*?)<\/code><\/pre>/)![1];
+  assert.equal(unescape(shown), t.code);
+  // "Run it in your browser" carries the same code to shinylive
+  const run = html.match(/href="(https:\/\/shinylive\.io\/r\/app\/#code=[^"]+)"/)![1];
+  const files = JSON.parse(decompressFromEncodedURIComponent(new URL(run.replace(/&amp;/g, '&')).hash.slice(6))!);
+  assert.equal(files[0].content, t.code);
+  assert.ok(html.includes('href="/?template=kpi-dashboard"'), 'Open in DropToApp');
+  for (const other of TEMPLATES.filter((x) => x !== t)) assert.ok(html.includes(`href="/templates/${other.slug}"`), 'links to the other templates');
+
+  res = await get('/templates/kpi-dashboard/app.R', '', '*/*');
+  assert.equal(res.headers.get('content-disposition'), 'attachment; filename="app.R"');
+  assert.equal(await res.text(), t.code);
+  res = await get('/templates/no-such-template');
+  assert.equal(res.status, 404);
+  assert.match(await res.text(), /Template not found/);
+
+  // Screenshots are public; nothing else outside the public folder is
+  assert.equal((await get('/static/templates/kpi-dashboard.webp', '', 'image/*')).headers.get('content-type'), 'image/webp');
+  for (const bad of ['/static/templates/..%2fapp.ts', '/static/other/x.png', '/static/templates/a/b.png'])
+    assert.equal((await get(bad, '', '*/*')).status, 404, bad);
+
+  // In the sitemap, and linked from the landing page
+  const sitemap = await (await get('/sitemap.xml', '', '*/*')).text();
+  for (const p of ['/templates', ...TEMPLATES.map((x) => `/templates/${x.slug}`)]) assert.ok(sitemap.includes(`<loc>${base}${p}</loc>`), p);
+  const landing = await (await get('/')).text();
+  assert.equal((landing.match(/class="tpl-card"/g) ?? []).length, 3);
+  assert.ok(landing.includes('href="/templates"'));
+});
+
+test('SHINYLIVE_URL points the Run button at another shinylive site', () => {
+  assert.equal(loadConfig({} as NodeJS.ProcessEnv).shinyliveUrl, 'https://shinylive.io');
+  assert.equal(loadConfig({ SHINYLIVE_URL: ' https://live.example.com/ ' } as NodeJS.ProcessEnv).shinyliveUrl, 'https://live.example.com');
+  assert.equal(loadConfig({ SHINYLIVE_URL: '/shinylive/' } as NodeJS.ProcessEnv).shinyliveUrl, '/shinylive');
 });
 
 test('SITE_URL sets the public address', async () => {

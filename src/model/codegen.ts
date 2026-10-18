@@ -18,8 +18,19 @@ export function nodeExpr(node: UINode): string {
   return nodeToR(node, node.children.map(nodeExpr));
 }
 
-function region(root: UINode, type: 'sidebar' | 'main'): UINode | undefined {
+function region(root: UINode, type: 'sidebar' | 'main' | 'navbar'): UINode | undefined {
   return root.children.find((c) => c.type === type);
+}
+
+/**
+ * Whether the page's sidebar ends up in the app: always for page_sidebar; for
+ * page_navbar only when it has content (it is optional there); never otherwise.
+ */
+export function sidebarUsed(root: UINode): boolean {
+  const layout = String(root.props.layout ?? 'page_sidebar');
+  if (layout === 'page_sidebar') return true;
+  if (layout !== 'page_navbar') return false;
+  return root.raw?.sidebar !== undefined || (region(root, 'sidebar')?.children.length ?? 0) > 0;
 }
 
 function themeArg(root: UINode): string | undefined {
@@ -31,11 +42,11 @@ function themeArg(root: UINode): string | undefined {
 export function generateUI(root: UINode): string {
   const layout = String(root.props.layout ?? 'page_sidebar');
   const title = String(root.props.title ?? '');
-  const main = region(root, 'main')?.children.map(nodeExpr) ?? [];
+  const main = (region(root, layout === 'page_navbar' ? 'navbar' : 'main') ?? region(root, 'main'))?.children.map(nodeExpr) ?? [];
   const args: (string | undefined)[] = [
     root.raw?.title ? `title = ${root.raw.title}` : named('title', title ? rStr(title) : undefined),
   ];
-  if (layout === 'page_sidebar') {
+  if (sidebarUsed(root)) {
     const sb = region(root, 'sidebar');
     if (root.raw?.sidebar) args.push(`sidebar = ${root.raw.sidebar}`);
     else if (sb) args.push(`sidebar = ${nodeExpr(sb)}`);
@@ -47,9 +58,8 @@ export function generateUI(root: UINode): string {
 export function generateServer(root: UINode): string {
   const blocks: string[] = [];
   const inputs: string[] = [];
-  const layout = String(root.props.layout ?? 'page_sidebar');
-  // The sidebar's contents only exist in the app when the layout has a sidebar.
-  const regions = root.children.filter((r) => r.type === 'main' || layout === 'page_sidebar');
+  // The sidebar's contents only exist in the app when the layout uses the sidebar.
+  const regions = root.children.filter((r) => r.type === 'main' || r.type === 'navbar' || (r.type === 'sidebar' && sidebarUsed(root)));
   for (const r of regions) {
     walk(r, (n) => {
       const def = COMPONENTS[n.type];

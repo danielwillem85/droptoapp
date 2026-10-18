@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { Dispatch, DragEvent } from 'react';
-import { canHold } from '../model/components';
-import { findNode, isDescendantOrSelf } from '../model/tree';
+import { hasRoomFor } from '../model/components';
+import { findNode, findParent, isDescendantOrSelf } from '../model/tree';
 import type { Side } from '../model/tree';
 import type { ComponentType, UINode } from '../model/types';
 import type { Action, EditorState } from '../state/store';
@@ -51,7 +51,10 @@ export function endDrag() {
 
 export function canDropInto(root: UINode, p: DragPayload, parentId: string): boolean {
   const parent = findNode(root, parentId);
-  if (!parent || !canHold(parent.type, p.componentType)) return false;
+  if (!parent) return false;
+  // A full container (a tooltip holds one component) only accepts reordering its own children.
+  const sameParent = p.kind === 'move' && findParent(root, p.id)?.parent.id === parentId;
+  if (!hasRoomFor(parent, p.componentType) && !sameParent) return false;
   if (p.kind === 'move' && isDescendantOrSelf(root, p.id, parentId)) return false;
   return true;
 }

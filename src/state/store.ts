@@ -1,4 +1,4 @@
-import { COMPONENTS, canHold, isRowsGrid, presetByKey } from '../model/components';
+import { COMPONENTS, hasRoomFor, isRowsGrid, presetByKey } from '../model/components';
 import { ImportError, importApp } from '../model/fromR';
 import {
   addCell,
@@ -10,6 +10,7 @@ import {
   moveNode,
   reconcileIds,
   removeNode,
+  setPageLayout,
   pathTo,
   placeBeside,
   sameTree,
@@ -17,7 +18,6 @@ import {
   updateExtra,
   updateProps,
   updateRaw,
-  walk,
 } from '../model/tree';
 import type { Side } from '../model/tree';
 import type { ComponentType, Project, Props, UINode } from '../model/types';
@@ -107,15 +107,26 @@ function commit(state: EditorState, root: UINode, extra: Partial<EditorState> = 
   };
 }
 
-/** Give a newly added tab a title that is unique in its tabset: Tab 1, Tab 2, ... */
-function numberNewTab(root: UINode, id: string): UINode {
-  const tabs = findParent(root, id)?.parent;
-  if (!tabs) return root;
-  const used = new Set(tabs.children.filter((c) => c.id !== id).map((c) => String(c.props.title ?? '')));
-  let n = tabs.children.length;
-  while (used.has(`Tab ${n}`)) n++;
-  return updateProps(root, id, { title: `Tab ${n}` });
+/**
+ * Give a newly added panel a title that is unique among its siblings:
+ * Tab 1, Tab 2 in a tabset; Page 1, Page 2 in a page_navbar; Section 1, ... in an accordion.
+ */
+function numberNewPanel(root: UINode, id: string): UINode {
+  const loc = findParent(root, id);
+  if (!loc) return root;
+  const panels = loc.parent;
+  const word = panels.type === 'navbar' ? 'Page' : panels.type === 'accordion' ? 'Section' : 'Tab';
+  const used = new Set(panels.children.filter((c) => c.id !== id).map((c) => String(c.props.title ?? '')));
+  let n = panels.children.length;
+  while (used.has(`${word} ${n}`)) n++;
+  return updateProps(root, id, { title: `${word} ${n}` });
 }
+
+/** Containers whose children are panels of the given type. */
+const PANEL_PARENTS: Partial<Record<ComponentType, ComponentType[]>> = {
+  nav_panel: ['navset_card_tab', 'navbar'],
+  accordion_panel: ['accordion'],
+};
 
 export function reducer(state: EditorState, action: Action): EditorState {
   // An invalid draft is the only copy of unfinished work. Tree mutations,
@@ -139,7 +150,7 @@ export function reducer(state: EditorState, action: Action): EditorState {
       const node = createNode(action.componentType, state.root, action.preset);
       let root = insertNode(state.root, action.parentId, action.index, node);
       if (root === state.root) return state;
-      if (node.type === 'nav_panel') root = numberNewTab(root, node.id);
+      if (PANEL_PARENTS[node.type]) root = numberNewPanel(root, node.id);
       return commit(state, syncGrids(root, [action.parentId]), { selectedId: node.id });
     }
 
@@ -184,7 +195,15 @@ export function reducer(state: EditorState, action: Action): EditorState {
 
     case 'updateProps': {
       const key = `props:${action.id}:${Object.keys(action.patch).join(',')}`;
-      return commit(state, updateProps(state.root, action.id, action.patch), {}, key);
+      let root = updateProps(state.root, action.id, action.patch);
+      // Switching to or from page_navbar moves the content between the main area and the pages.
+      const layout = action.patch.layout;
+      if (action.id === state.root.id && typeof layout === 'string' && layout !== state.root.props.layout) {
+        root = setPageLayout(root, layout);
+        const selectedId = state.selectedId && findNode(root, state.selectedId) ? state.selectedId : null;
+        return commit(state, root, { selectedId });
+      }
+      return commit(state, root, {}, key);
     }
 
     case 'setRaw':
@@ -271,27 +290,31 @@ export function clickAddTarget(
   type: ComponentType,
 ): { parentId: string; index: number } | null {
   const sel = selectedId ? findNode(root, selectedId) : null;
-  // A new tab goes into the tabset the selection is in, right after the current tab.
-  if (type === 'nav_panel' && sel) {
+  // A new tab (or section) goes into the tabset (or accordion) the selection is in, right after the current one.
+  const parents = PANEL_PARENTS[type];
+  if (parents && sel) {
     const path = pathTo(root, sel.id);
     for (let i = path.length - 1; i >= 0; i--) {
       const n = findNode(root, path[i])!;
-      if (n.type !== 'navset_card_tab') continue;
+      if (!parents.includes(n.type)) continue;
       if (i === path.length - 1) return { parentId: n.id, index: n.children.length };
       return { parentId: n.id, index: n.children.findIndex((c) => c.id === path[i + 1]) + 1 };
     }
   }
-  if (sel && canHold(sel.type, type)) return { parentId: sel.id, index: sel.children.length };
+  // A new page of a page_navbar goes at the end of the navigation bar.
+  const navbar = root.children.find((c) => c.type === 'navbar');
+  if (type === 'nav_panel' && navbar && (!sel || sel.type === 'navbar')) return { parentId: navbar.id, index: navbar.children.length };
+  if (sel && hasRoomFor(sel, type)) return { parentId: sel.id, index: sel.children.length };
   if (sel) {
     const loc = findParent(root, sel.id);
-    if (loc && canHold(loc.parent.type, type)) return { parentId: loc.parent.id, index: loc.index + 1 };
+    if (loc && hasRoomFor(loc.parent, type)) return { parentId: loc.parent.id, index: loc.index + 1 };
   }
-  // Otherwise: inputs to the end of the sidebar, everything else to the end of the main area.
+  // Otherwise: inputs to the end of the sidebar, everything else to the end of the main area
+  // (with page_navbar: the first page).
   const wantSidebar = COMPONENTS[type].io === 'input' && root.props.layout === 'page_sidebar';
-  let fallback: UINode | null = null;
-  walk(root, (n) => {
-    if (!fallback && n.type === (wantSidebar ? 'sidebar' : 'main') && canHold(n.type, type)) fallback = n;
-  });
-  const f = fallback as UINode | null;
-  return f ? { parentId: f.id, index: f.children.length } : null;
+  const firstPage = navbar?.children.find((c) => c.type === 'nav_panel');
+  const area = wantSidebar ? root.children.find((c) => c.type === 'sidebar') : (root.children.find((c) => c.type === 'main') ?? firstPage);
+  if (area && hasRoomFor(area, type)) return { parentId: area.id, index: area.children.length };
+  if (navbar && hasRoomFor(navbar, type)) return { parentId: navbar.id, index: navbar.children.length };
+  return null;
 }

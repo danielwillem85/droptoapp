@@ -1,4 +1,4 @@
-import { COMPONENTS, PRESETS, canAccept, canHold, isRowsGrid, isStructural, syncedWidths, wrapperFor } from './components';
+import { COMPONENTS, PRESETS, canAccept, canHold, hasRoomFor, isPanel, isRowsGrid, isStructural, syncedWidths, wrapperFor } from './components';
 import type { Axis } from './components';
 import type { ComponentType, Props, UINode } from './types';
 
@@ -79,13 +79,21 @@ export function createNode(type: ComponentType, root: UINode | null, presetKey?:
   const props = cloneProps(def.defaults);
   if (def.idPrefix) props.id = nextShinyId(def.idPrefix, root ? usedShinyIds(root) : new Set());
   const node: UINode = { id: newNodeId(), type, props, children: [] };
-  // A tabset is useless without tabs, so start it with two.
+  // A tabset or accordion is useless without panels, so start it with two.
   if (type === 'navset_card_tab') {
     node.children = [
       { id: newNodeId(), type: 'nav_panel', props: { title: 'Tab 1' }, children: [] },
       { id: newNodeId(), type: 'nav_panel', props: { title: 'Tab 2' }, children: [] },
     ];
   }
+  if (type === 'accordion') {
+    node.children = [
+      { id: newNodeId(), type: 'accordion_panel', props: { title: 'Section 1' }, children: [] },
+      { id: newNodeId(), type: 'accordion_panel', props: { title: 'Section 2' }, children: [] },
+    ];
+  }
+  // A tooltip needs something to hover over.
+  if (type === 'tooltip') node.children = [{ id: newNodeId(), type: 'paragraph', props: { text: 'Hover over me' }, children: [] }];
   return node;
 }
 
@@ -128,7 +136,7 @@ export function wrapFor(parent: ComponentType, node: UINode): UINode {
  */
 export function insertNode(root: UINode, parentId: string, index: number, node: UINode): UINode {
   const parent = findNode(root, parentId);
-  if (!parent || !canHold(parent.type, node.type)) return root;
+  if (!parent || !hasRoomFor(parent, node.type)) return root;
   const item = wrapFor(parent.type, node);
   return mapNode(root, parentId, (p) => {
     const children = [...p.children];
@@ -148,6 +156,8 @@ export function moveNode(root: UINode, id: string, parentId: string, index: numb
   if (isDescendantOrSelf(root, id, parentId)) return root; // can't drop into itself
   if (!canHold(parent.type, node.type)) return root;
   const loc = findParent(root, id)!;
+  // Check for room before taking the node out, or a refused insert would lose it.
+  if (loc.parent.id !== parentId && !hasRoomFor(parent, node.type)) return root;
   let target = index;
   if (loc.parent.id === parentId && loc.index < index) target -= 1;
   if (loc.parent.id === parentId && loc.index === target) return root;
@@ -247,7 +257,7 @@ export type Side = 'left' | 'right';
 export function canPlaceBeside(root: UINode, targetId: string, nodeType: ComponentType, movingId?: string): boolean {
   const target = findNode(root, targetId);
   const loc = findParent(root, targetId);
-  if (!target || !loc || isStructural(target.type) || target.type === 'nav_panel') return false;
+  if (!target || !loc || isStructural(target.type) || isPanel(target.type)) return false;
   if (!canAccept(loc.parent.type, 'layout_columns') || !canHold('cell', nodeType)) return false;
   if (movingId && isDescendantOrSelf(root, movingId, targetId)) return false;
   return true;
@@ -318,6 +328,39 @@ export function addCell(root: UINode, parentId: string, index: number, axis: Axi
     return done(mapNode(root, parentId, (p) => ({ ...p, children: [newGrid(axis, [existing, cell])] })));
   }
 
-  if (!canHold(parent.type, 'layout_columns')) return { root, cellId: null };
+  if (!hasRoomFor(parent, 'layout_columns')) return { root, cellId: null };
   return done(insertNode(root, parentId, index, newGrid(axis, [cell])));
+}
+
+// ---------------------------------------------------------------------------
+// Page layout
+
+/**
+ * Switch the page layout. page_navbar keeps its pages in a 'navbar' region
+ * instead of 'main', so the content is carried over:
+ *  - to page_navbar: the main area's content becomes the first page;
+ *  - from page_navbar: a single page's content becomes the main area, and
+ *    several pages become the tabs of a Tabset card (nothing is lost).
+ */
+export function setPageLayout(root: UINode, layout: string): UINode {
+  const next: UINode = { ...root, props: { ...root.props, layout } };
+  const main = root.children.find((c) => c.type === 'main');
+  const navbar = root.children.find((c) => c.type === 'navbar');
+  if (layout === 'page_navbar' && main) {
+    const page: UINode = { id: newNodeId(), type: 'nav_panel', props: { title: 'Page 1' }, children: main.children };
+    const pages: UINode = { id: newNodeId(), type: 'navbar', props: {}, children: [page] };
+    return { ...next, children: next.children.map((c) => (c === main ? pages : c)) };
+  }
+  if (layout !== 'page_navbar' && navbar) {
+    const pages = navbar.children;
+    const content =
+      pages.length === 0
+        ? []
+        : pages.length === 1 && pages[0].type === 'nav_panel'
+          ? pages[0].children
+          : [{ id: newNodeId(), type: 'navset_card_tab' as const, props: cloneProps(COMPONENTS.navset_card_tab.defaults), children: pages }];
+    const area: UINode = { id: newNodeId(), type: 'main', props: {}, children: content };
+    return { ...next, children: next.children.map((c) => (c === navbar ? area : c)) };
+  }
+  return next;
 }

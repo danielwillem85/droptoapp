@@ -38,7 +38,9 @@ export function PropertiesPanel({ issues }: { issues: Issue[] }) {
         <p className="props-empty">
           {node.type === 'main'
             ? 'The main area holds the page content. Drop components into it on the canvas.'
-            : 'This component has no properties.'}
+            : node.type === 'navbar'
+              ? 'The pages of the app, one Tab panel each. Add a page by dropping a Tab panel on the navigation bar, or by clicking Tab panel in the palette.'
+              : 'This component has no properties.'}
         </p>
       ) : (
         <div className="props-fields">

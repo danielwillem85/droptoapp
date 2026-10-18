@@ -1,3 +1,4 @@
+import { sidebarUsed } from './codegen';
 import { COMPONENTS } from './components';
 import { parseWidths, VALID_R_ID } from './rcode';
 import { parseR } from './rparse';
@@ -14,6 +15,7 @@ export function validate(root: UINode): Issue[] {
   const issues: Issue[] = [];
   const seen = new Map<string, string>();
   const layout = String(root.props.layout ?? 'page_sidebar');
+  const usesSidebar = sidebarUsed(root);
 
   walk(root, (n) => {
     const def = COMPONENTS[n.type];
@@ -64,7 +66,23 @@ export function validate(root: UINode): Issue[] {
     }
     if (n.type === 'navset_card_tab' && n.children.length === 0)
       issues.push({ nodeId: n.id, severity: 'warning', message: 'Tabset card has no tabs.' });
-    if (n.type === 'sidebar' && layout !== 'page_sidebar' && n.children.length > 0)
+    if (n.type === 'accordion' && n.children.length === 0)
+      issues.push({ nodeId: n.id, severity: 'warning', message: 'Accordion has no sections.' });
+    if (n.type === 'navbar' && !n.children.some((c) => c.type === 'nav_panel'))
+      issues.push({ nodeId: n.id, severity: 'warning', message: 'page_navbar has no pages yet: add a Tab panel to the navigation bar.' });
+    if (n.type === 'tooltip' && n.children.length === 0)
+      issues.push({ nodeId: n.id, severity: 'warning', message: 'Tooltip: drop the component it should explain into it.' });
+    if (n.type === 'conditionalPanel' && !n.raw?.condition) {
+      const cond = String(n.props.condition ?? '').trim();
+      if (!cond) issues.push({ nodeId: n.id, severity: 'error', message: 'Conditional panel: the condition is empty.' });
+      else if (/\binput\$/.test(cond))
+        issues.push({
+          nodeId: n.id,
+          severity: 'warning',
+          message: 'Conditional panel: the condition is JavaScript, so write input.id instead of input$id.',
+        });
+    }
+    if (n.type === 'sidebar' && !usesSidebar && n.children.length > 0)
       issues.push({
         nodeId: n.id,
         severity: 'warning',

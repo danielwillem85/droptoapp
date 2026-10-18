@@ -1,8 +1,8 @@
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './ui/App';
-import { fetchCurrentUser, goToLogin } from './ui/auth';
-import type { User } from './ui/auth';
+import { fetchSession, goToLogin } from './ui/auth';
+import type { Settings, User } from './ui/auth';
 import './ui/styles.css';
 
 /** Fade out the loading screen from index.html. Safe to call more than once. */
@@ -29,13 +29,13 @@ function BootScreenDismisser() {
  * that expire while the page is open.
  */
 function AuthGate() {
-  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<{ user: User; settings: Settings } | null>(null);
   useEffect(() => {
     let cancelled = false;
-    fetchCurrentUser()
-      .then((u) => {
+    fetchSession()
+      .then((s) => {
         if (cancelled) return;
-        if (u) setUser(u);
+        if (s) setSession(s);
         else goToLogin();
       })
       .catch(() => window.__bootFailed?.());
@@ -43,10 +43,10 @@ function AuthGate() {
       cancelled = true;
     };
   }, []);
-  if (!user) return null; // the loading screen stays up meanwhile
+  if (!session) return null; // the loading screen stays up meanwhile
   return (
     <>
-      <App user={user} />
+      <App user={session.user} settings={session.settings} />
       <BootScreenDismisser />
     </>
   );

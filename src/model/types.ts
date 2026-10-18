@@ -8,6 +8,7 @@ export type ComponentType =
   | 'page'
   | 'sidebar'
   | 'main'
+  | 'navbar' // the pages of a page_navbar(), instead of 'main'
   // layout
   | 'card'
   | 'layout_columns'
@@ -15,6 +16,9 @@ export type ComponentType =
   | 'navset_card_tab'
   | 'nav_panel'
   | 'value_box'
+  | 'accordion'
+  | 'accordion_panel'
+  | 'conditionalPanel'
   // inputs
   | 'sliderInput'
   | 'numericInput'
@@ -26,15 +30,20 @@ export type ComponentType =
   | 'checkboxGroupInput'
   | 'dateInput'
   | 'actionButton'
+  | 'fileInput'
   // outputs
   | 'plotOutput'
   | 'tableOutput'
   | 'textOutput'
   | 'verbatimTextOutput'
+  | 'DTOutput'
+  | 'plotlyOutput'
+  | 'downloadButton'
   // static content
   | 'heading'
   | 'paragraph'
   | 'divider'
+  | 'tooltip'
   | 'rcode'; // any other R UI expression, kept verbatim
 
 /** A node in the UI tree. Containers use `children`; leaves keep it empty. */

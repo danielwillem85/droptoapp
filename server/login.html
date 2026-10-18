@@ -6,7 +6,7 @@
     <title>DropToApp: drag-and-drop R Shiny app builder</title>
     <meta
       name="description"
-      content="Design R Shiny apps visually. Drag and drop bslib layouts, inputs and outputs, edit the code side by side, and export a clean app.R. Free to start."
+      content="Design R Shiny apps visually: drag and drop bslib layouts, inputs and outputs, run the app live in your browser, and export a clean app.R. Free."
     />
     <link rel="canonical" href="{{SITE_URL}}/" />
     <link
@@ -37,7 +37,7 @@
   "image": "{{SITE_URL}}/static/og-image.png",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Web browser",
-  "description": "A visual, drag-and-drop editor for R Shiny user interfaces that writes clean app.R code with Shiny and bslib.",
+  "description": "A visual, drag-and-drop editor for R Shiny user interfaces that writes clean app.R code with Shiny and bslib, and runs the app live in the browser with webR.",
   "offers": {
     "@type": "Offer",
     "price": "0",
@@ -71,7 +71,7 @@
       "name": "Does the exported app depend on DropToApp?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "No. The export is plain Shiny and bslib code with no DropToApp package or runtime. Install the two packages with install.packages(c(\"shiny\", \"bslib\")) and run the app with shiny::runApp(), locally, on Shiny Server, Posit Connect or shinyapps.io."
+        "text": "No. The export is plain Shiny and bslib code with no DropToApp package or runtime. Install the packages with install.packages(c(\"shiny\", \"bslib\")), plus DT or plotly if you use those components, and run the app with shiny::runApp(), locally, on Shiny Server, Posit Connect or shinyapps.io."
       }
     },
     {
@@ -80,6 +80,14 @@
       "acceptedAnswer": {
         "@type": "Answer",
         "text": "Yes. Open an app.R whose UI uses page_sidebar(), page_fillable() or page_fluid() and DropToApp rebuilds the design from it. Anything it has no visual editor for is kept as an R code block, and code outside the UI (data loading, reactives, helper functions) is preserved as written."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I run my app without installing R?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. The Run button starts your app for real, in your browser, using webR (R compiled to WebAssembly) and shinylive, so inputs, outputs and server code all work. The first start downloads R and the packages your app uses, which can take a minute. Packages need to be available for webR; most of CRAN is. To publish the app, export app.R and deploy it as usual."
       }
     },
     {
@@ -95,7 +103,7 @@
       "name": "Which Shiny components are supported?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Page layouts with a sidebar, cards, grids of columns and rows, tabsets, value boxes, sliders, numeric and text inputs, text areas, select inputs, radio buttons, checkboxes, date inputs, action buttons, plot, table, text and console outputs, headings and paragraphs, plus R code blocks for anything else."
+        "text": "Page layouts with a sidebar or a navigation bar, cards, grids of columns and rows, tabsets, accordions, value boxes and conditional panels; sliders, numeric and text inputs, text areas, select inputs, radio buttons, checkboxes, date inputs, file uploads and action buttons; plots, interactive plotly charts, tables, DT data tables, text and console outputs and download buttons; headings, paragraphs and tooltips, plus R code blocks for anything else."
       }
     },
     {
@@ -103,7 +111,7 @@
       "name": "Where are my designs stored?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "In your own browser. Designs are autosaved locally and never uploaded to our servers; you can save a design file or export app.R at any time. Your account is only used to sign you in."
+        "text": "In your own browser. Designs are autosaved locally and never uploaded to our servers; you can save a design file or export app.R at any time. Your account is only used to sign you in. When you click Run, the code is handed to shinylive in the part of the link after #, which browsers don't send to servers."
       }
     },
     {
@@ -545,6 +553,56 @@
         margin: 10px 0 0;
         color: var(--muted);
       }
+      .tpl-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 20px;
+      }
+      .tpl-card {
+        display: flex;
+        flex-direction: column;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .tpl-thumb img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-bottom: 1px solid var(--border);
+      }
+      .tpl-card-body {
+        padding: 14px 16px 16px;
+      }
+      .tpl-card-body h3 a {
+        color: var(--text);
+        text-decoration: none;
+      }
+      .tpl-card-body h3 a:hover {
+        color: var(--accent);
+      }
+      .tpl-card-body p {
+        margin: 0 0 10px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      .tags span {
+        font-size: 12px;
+        padding: 1px 9px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+      .more-link {
+        margin: 22px 0 0;
+        font-weight: 600;
+      }
       .final-cta {
         text-align: center;
       }
@@ -566,7 +624,8 @@
           grid-template-columns: 1fr;
           gap: 36px;
         }
-        .grid-3 {
+        .grid-3,
+        .tpl-grid {
           grid-template-columns: 1fr;
         }
         .site-nav {
@@ -589,6 +648,7 @@
           <a href="#features">Features</a>
           <a href="#how-it-works">How it works</a>
           <a href="#components">Components</a>
+          <a href="/templates">Templates</a>
           <a href="#faq">FAQ</a>
         </nav>
         <a class="header-login" href="#account" data-open="login">Log in</a>
@@ -609,6 +669,7 @@
             <ul class="ticks">
               <li>Design the interface visually, with the R code updating side by side</li>
               <li>Edit the code by hand and the design follows, or the other way round</li>
+              <li>Run the real app in your browser, server code included, without installing R</li>
               <li>Export standard Shiny and bslib code, with no lock-in</li>
             </ul>
             <div class="cta-row">
@@ -677,7 +738,7 @@
           <div class="grid-3">
             <article class="feature">
               <h3>Drag-and-drop layouts</h3>
-              <p>Pages with a sidebar, cards, tabsets and value boxes, built from modern bslib components rather than legacy fluidRow() grids.</p>
+              <p>Pages with a sidebar, cards, tabsets and value boxes, built from modern bslib components. Preview Bootswatch themes at desktop, tablet and phone widths.</p>
             </article>
             <article class="feature">
               <h3>Grids of rows and columns</h3>
@@ -696,8 +757,8 @@
               <p>Import an app.R and keep working visually. Code DropToApp has no editor for, such as DT tables or helper functions, is kept exactly as written.</p>
             </article>
             <article class="feature">
-              <h3>Themes and responsive preview</h3>
-              <p>Preview Bootswatch themes and check the layout at desktop, tablet and phone widths before you run a single line of R.</p>
+              <h3>Run it live in your browser</h3>
+              <p>Click Run and your Shiny app starts for real, with working inputs, outputs and server code, powered by webR and shinylive. No R installation needed.</p>
             </article>
           </div>
         </div>
@@ -717,8 +778,8 @@
               <p>Set IDs, labels, choices and widths in the properties panel, or edit the R code directly. Both stay in sync.</p>
             </li>
             <li>
-              <h3>Export and run</h3>
-              <p>Download app.R and run it with <code>shiny::runApp()</code>, locally or on Shiny Server, Posit Connect or shinyapps.io.</p>
+              <h3>Run and export</h3>
+              <p>Click Run to try the real app in your browser. Then download app.R and run it with <code>shiny::runApp()</code>, locally or on Shiny Server, Posit Connect or shinyapps.io.</p>
             </li>
           </ol>
         </div>
@@ -734,11 +795,11 @@
             <div class="component-group">
               <h3>Layout</h3>
               <ul>
-                <li><code>page_sidebar()</code>, <code>page_fillable()</code>, <code>page_fluid()</code></li>
+                <li><code>page_sidebar()</code>, <code>page_navbar()</code>, <code>page_fillable()</code>, <code>page_fluid()</code></li>
                 <li><code>sidebar()</code> and <code>card()</code> with headers</li>
                 <li><code>layout_columns()</code> grids of rows and columns</li>
-                <li><code>navset_card_tab()</code> with <code>nav_panel()</code> tabs</li>
-                <li><code>value_box()</code> for key numbers</li>
+                <li><code>navset_card_tab()</code> with <code>nav_panel()</code> tabs, and <code>accordion()</code></li>
+                <li><code>value_box()</code> for key numbers, <code>conditionalPanel()</code></li>
               </ul>
             </div>
             <div class="component-group">
@@ -748,20 +809,34 @@
                 <li><code>textInput()</code>, <code>textAreaInput()</code></li>
                 <li><code>selectInput()</code>, <code>radioButtons()</code></li>
                 <li><code>checkboxInput()</code>, <code>checkboxGroupInput()</code></li>
-                <li><code>dateInput()</code>, <code>actionButton()</code></li>
+                <li><code>dateInput()</code>, <code>actionButton()</code>, <code>fileInput()</code></li>
               </ul>
             </div>
             <div class="component-group">
               <h3>Outputs and content</h3>
               <ul>
-                <li><code>plotOutput()</code> with <code>renderPlot()</code></li>
-                <li><code>tableOutput()</code> with <code>renderTable()</code></li>
-                <li><code>textOutput()</code> and <code>verbatimTextOutput()</code></li>
-                <li>Headings, paragraphs and dividers</li>
-                <li>R code blocks for any other UI, like <code>DT::DTOutput()</code></li>
+                <li><code>plotOutput()</code> and interactive <code>plotly::plotlyOutput()</code></li>
+                <li><code>tableOutput()</code> and searchable <code>DT::DTOutput()</code> tables</li>
+                <li><code>textOutput()</code>, <code>verbatimTextOutput()</code>, <code>downloadButton()</code></li>
+                <li>Headings, paragraphs, dividers and <code>tooltip()</code></li>
+                <li>R code blocks for any other UI, like <code>leaflet::leafletOutput()</code></li>
               </ul>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section id="templates">
+        <div class="wrap">
+          <h2>Start from a template</h2>
+          <p class="section-intro">
+            Complete Shiny apps to copy, run in your browser or open in the editor: a KPI dashboard, a data explorer, a
+            form, a multi-page app and more.
+          </p>
+          <div class="tpl-grid">
+        {{TEMPLATE_CARDS}}
+          </div>
+          <p class="more-link"><a href="/templates">Browse all Shiny app templates →</a></p>
         </div>
       </section>
 
@@ -799,11 +874,15 @@
           </details>
           <details>
             <summary>Does the exported app depend on DropToApp?</summary>
-            <p>No. The export is plain Shiny and bslib code with no DropToApp package or runtime. Install the two packages with <code>install.packages(c("shiny", "bslib"))</code> and run the app with <code>shiny::runApp()</code>, locally, on Shiny Server, Posit Connect or shinyapps.io.</p>
+            <p>No. The export is plain Shiny and bslib code with no DropToApp package or runtime. Install the packages with <code>install.packages(c("shiny", "bslib"))</code>, plus DT or plotly if you use those components, and run the app with <code>shiny::runApp()</code>, locally, on Shiny Server, Posit Connect or shinyapps.io.</p>
           </details>
           <details>
             <summary>Can I open an existing Shiny app?</summary>
             <p>Yes. Open an <code>app.R</code> whose UI uses <code>page_sidebar()</code>, <code>page_fillable()</code> or <code>page_fluid()</code> and DropToApp rebuilds the design from it. Anything it has no visual editor for is kept as an R code block, and code outside the UI (data loading, reactives, helper functions) is preserved as written.</p>
+          </details>
+          <details>
+            <summary>Can I run my app without installing R?</summary>
+            <p>Yes. The Run button starts your app for real, in your browser, using webR (R compiled to WebAssembly) and shinylive, so inputs, outputs and server code all work. The first start downloads R and the packages your app uses, which can take a minute. Packages need to be available for webR; most of CRAN is. To publish the app, export <code>app.R</code> and deploy it as usual.</p>
           </details>
           <details>
             <summary>Can I edit the code by hand?</summary>
@@ -811,11 +890,11 @@
           </details>
           <details>
             <summary>Which Shiny components are supported?</summary>
-            <p>Page layouts with a sidebar, cards, grids of columns and rows, tabsets, value boxes, sliders, numeric and text inputs, text areas, select inputs, radio buttons, checkboxes, date inputs, action buttons, plot, table, text and console outputs, headings and paragraphs, plus R code blocks for anything else.</p>
+            <p>Page layouts with a sidebar or a navigation bar, cards, grids of columns and rows, tabsets, accordions, value boxes and conditional panels; sliders, numeric and text inputs, text areas, select inputs, radio buttons, checkboxes, date inputs, file uploads and action buttons; plots, interactive plotly charts, tables, DT data tables, text and console outputs and download buttons; headings, paragraphs and tooltips, plus R code blocks for anything else.</p>
           </details>
           <details>
             <summary>Where are my designs stored?</summary>
-            <p>In your own browser. Designs are autosaved locally and never uploaded to our servers; you can save a design file or export <code>app.R</code> at any time. Your account is only used to sign you in.</p>
+            <p>In your own browser. Designs are autosaved locally and never uploaded to our servers; you can save a design file or export <code>app.R</code> at any time. Your account is only used to sign you in. When you click Run, the code is handed to shinylive in the part of the link after #, which browsers don&#39;t send to servers.</p>
           </details>
           <details>
             <summary>Is DropToApp free?</summary>
@@ -835,7 +914,7 @@
 
     <footer>
       <div class="wrap">
-        <p><strong>DropToApp</strong>: a visual, drag-and-drop editor for R Shiny user interfaces.</p>
+        <p><strong>DropToApp</strong>: a visual, drag-and-drop editor for R Shiny user interfaces. <a href="/templates">Shiny app templates</a></p>
         <p>Shiny is a trademark of Posit Software, PBC. DropToApp is an independent project, not affiliated with or endorsed by Posit or the R Foundation.</p>
       </div>
     </footer>
