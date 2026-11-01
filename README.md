@@ -66,8 +66,8 @@ shiny::runApp("path/to/folder/with/app.R")
   it on every page.
 - **Templates.** *Templates…* opens complete starter apps (a KPI dashboard,
   a data explorer, a feedback form, a multi-page app, a CSV explorer and the
-  Old Faithful example). Opening one replaces the design; Undo brings yours
-  back. See *Template gallery* below.
+  Old Faithful example). Each one opens as a new project. See *Template
+  gallery* below.
 - **Move components** by dragging them. A blue line shows where they'll land.
   Rules are enforced: for example, a *Tab panel* can only go inside a
   *Tabset card*, and you can't drop a container into itself.
@@ -83,10 +83,17 @@ shiny::runApp("path/to/folder/with/app.R")
 - **Page settings:** `page_sidebar`, `page_navbar`, `page_fillable` or
   `page_fluid`, and Bootswatch themes.
 - **Responsive preview** at desktop, tablet and phone widths.
+- **Editor size.** The whole editor is shown at 85% by default, so more of the
+  design, code and panels fit on the screen. The − / % / + control at the right
+  of the status bar changes it (70% to 125%; click the percentage to go back
+  to 85%). It is remembered per browser. This scales the editor with CSS
+  `zoom`; toolbar labels give way by the toolbar's own width (container
+  queries), so they follow the chosen size.
 - **Run the real app** in the browser with **▶ Run**, server code included,
   without installing R (see *Running apps in the browser* below).
-- **Undo/redo**, save/open designs (`*.shinydesign.json`), and autosave in
-  the browser.
+- **Projects in your account** (*My projects*, see below), saved
+  automatically, plus **undo/redo** and download/open of design files
+  (`*.shinydesign.json`).
 
 Keyboard: `Del` deletes · `Ctrl+Z` / `Ctrl+Y` undo/redo · `Ctrl+D` duplicates ·
 `Alt+↑/↓` reorders · `Esc` selects the page · `Ctrl+Shift+Enter` runs (or
@@ -115,6 +122,34 @@ nothing extra to install.
   repository (repo.r-wasm.org), which has most of CRAN but not packages that
   need system libraries. Code that reads local files or databases won't find
   them in the browser.
+
+#### Debugging with `browser()`
+
+Put `browser()` in server code, or click a line number in the code view to
+add one above that line (click the red dot to remove it again, like the margin
+in RStudio). Breakpoints can only go at the start of a statement inside a
+function: the server, a render block, an observer, a helper function.
+
+- **In RStudio or R** the exported `app.R` behaves as usual: the app pauses at
+  `browser()` and you get the `Browse[1]>` prompt.
+- **With ▶ Run** R can't pause an app running in the browser, so DropToApp
+  rewrites `browser()` for Run only: when the app reaches it, a *Debugger*
+  dialog opens in the app with the line and the code around it, the local
+  variables (with their values at that moment), the inputs, and an R prompt
+  that evaluates code in that environment (`summary(x)`, `nrow(df)`, …).
+  *Continue* closes it; *Don't stop again* turns it off until the next Run.
+  The run bar shows which lines will stop the app. `browser()`'s arguments
+  keep working, e.g. `browser(expr = input$n > 5)` only stops when the
+  condition is true.
+- The validator warns about every `browser()` left in the code, so you remember
+  to remove it before deploying.
+
+How it's done (`src/model/debug.ts`): `browser()` calls are found by parsing
+the code (so comments and strings don't count) and replaced by
+`.dta_browser(…, .line = 42L, .source = "…")` in the code sent to Run. A
+small debugger written in R with plain Shiny functions (`DEBUGGER_R`) is added
+at the top, and `.dta_debug_init()` is added as the first line of the server
+function. *R console ↗* gets your `app.R` unchanged.
 
 How it works: `src/model/shinylive.ts` builds a link like
 `https://shinylive.io/r/app/#h=0&code=…` where `code` is `app.R` as JSON,
@@ -149,6 +184,10 @@ between them at any time.
   about to happen (*Edited by hand*; *Reformat* does it on request).
 - **Undo and redo** work across both: typing in the editor is one undo step
   per burst of typing. `Ctrl+Z` inside the editor uses the editor's own undo.
+  Each undo step keeps the code exactly as it was, so undoing a visual edit
+  brings back your hand-written `app.R` byte for byte (formatting and comments
+  included). *Reformat* and *Discard edits* can be undone too, and undoing a
+  discard restores an unfinished draft with its syntax error.
 
 Nothing you write in R is thrown away, even if the designer has no visual
 editor for it:
@@ -190,18 +229,45 @@ anonymous visitors.
   registration. The result is stored per user in `users.brevo_status`
   (`subscribed`, `error: …` or `skipped: …`), with the time of the choice in
   `newsletter_at`.
-- **Designs** are still autosaved in the browser, now separately per account.
-- **Account notifications:** every successfully created account triggers a
-  transactional email to `info@droptoapp.com` through Brevo, regardless of the
-  newsletter choice. It includes the name, email, account ID, creation time
-  (UTC), and newsletter choice, without passwords or session tokens. Set
-  `BREVO_SENDER_EMAIL` to a verified Brevo sender (default: `info@droptoapp.com`).
-  This uses `BREVO_API_KEY` and does not require `BREVO_LIST_ID`. Requests run
-  in the background with a 10-second timeout; failures are logged as
-  `[account-notification]` and do not block registration. Delivery is best
-  effort, with no automatic retry. Brevo acceptance does not confirm inbox
-  delivery. See [Brevo's transactional email setup](https://developers.brevo.com/docs/send-a-transactional-email)
-  for the verified-sender requirement.
+- **Designs** are saved in the account as projects (see *Projects* below).
+- **Notifications to you:** every new account and every successful login send
+  an email through Brevo to the addresses in `NOTIFY_EMAILS` (comma-separated;
+  default `danielvdpalm@gmail.com`; empty sends none), from
+  `BREVO_SENDER_EMAIL`, which must be a verified Brevo sender.
+  - *New account:* name, email, account ID, creation time (UTC) and newsletter
+    choice.
+  - *Login:* name, email, account ID, time (UTC), IP address, browser (user
+    agent), and how (password, or after resetting the password). Failed login
+    attempts don't send anything.
+  - Never included: passwords, password hashes or session tokens.
+  - They need `BREVO_API_KEY`, not `BREVO_LIST_ID`. They are sent in the
+    background with a 10-second timeout, so a slow or failing Brevo never
+    delays registration or login; failures are logged as
+    `[account-notification]` / `[login-notification]`, without retry.
+  - The login notices contain your users' IP addresses: mention this in your
+    privacy policy.
+- **Forgot your password?** On the login form, people enter their email and
+  get a link to choose a new password, sent through Brevo's transactional
+  email (`POST /v3/smtp/email`, from `BREVO_SENDER_EMAIL`).
+  - The answer is the same whether or not the address has an account, so the
+    form can't be used to find out who is registered.
+  - A link works once and for 60 minutes; asking again replaces older links.
+    Only a SHA-256 hash of the token is stored (`password_resets` table). The
+    page (`/reset-password`) takes the token out of the address bar, isn't
+    indexed and sends no referrer.
+  - Setting a new password logs the account out on all other devices, logs it
+    in here, and sends a "your password was changed" email.
+  - Limits: 3 reset emails per address and 10 requests per IP an hour; 20
+    attempts to use a link per IP per 15 minutes.
+  - Links are built from `SITE_URL` only (or the request's address on
+    localhost while developing), never from the request's Host header, which
+    anyone can fake. **Set `SITE_URL` in production**, or no reset emails are
+    sent (the server logs a warning).
+  - Without `BREVO_API_KEY` (e.g. developing locally), the reset link is
+    written to the server log instead of emailed.
+  - In Brevo, consider turning off click tracking for transactional emails
+    (Transactional > Settings), so reset links go straight to your site
+    instead of through Brevo's redirect.
 
 Settings are in `.env` (see `.env.example` for all of them):
 
@@ -209,16 +275,63 @@ Settings are in `.env` (see `.env.example` for all of them):
 | -------------------------------- | -------------------------------------------------------- |
 | `BREVO_API_KEY`                  | Brevo > SMTP & API > API Keys                            |
 | `BREVO_LIST_ID`                  | Brevo > Contacts > Lists (the list's ID number)          |
-| `BREVO_SENDER_EMAIL`             | Verified notification sender (default `info@droptoapp.com`) |
+| `BREVO_SENDER_EMAIL`             | Verified sender for notifications and reset emails (default `info@droptoapp.com`) |
+| `NOTIFY_EMAILS`                  | Who gets an email for each new account and login (default `danielvdpalm@gmail.com`) |
 | `NEWSLETTER_CHECKED_BY_DEFAULT`  | Newsletter box ticked on the form (default `false`)      |
 | `PORT`, `HOST`                   | Where the server listens (default `127.0.0.1:3000`)      |
 | `DATABASE_PATH`                  | SQLite file (default `data/droptoapp.db`)              |
 | `SESSION_DAYS`                   | How long a log-in lasts (default 30)                     |
-| `SITE_URL`                       | Public address for SEO, e.g. `https://droptoapp.com`     |
+| `SITE_URL`                       | Public address, e.g. `https://droptoapp.com`: SEO, and needed for password-reset links |
 | `SHINYLIVE_URL`                  | Where **Run** runs apps (default `https://shinylive.io`) |
 | `COOKIE_SECURE`, `TRUST_PROXY`   | Set both to `true` in production behind nginx + HTTPS    |
 
 To see who signed up: `sqlite3 data/droptoapp.db "select email, newsletter, brevo_status, created_at from users"`.
+
+## Projects (designs saved in the account)
+
+Every design is a project in the user's account, so it is there on any
+computer they log in on. The name of the open project is in the toolbar; it
+opens **My projects**, where projects can be opened, renamed, duplicated and
+deleted. *New*, *Templates…* and *Open…* each start a new project; the
+previous one stays in My projects. *Download* saves the design as a file.
+
+- **Saving** is automatic: about a second after a change, to the account
+  (`PUT /api/projects/:id`). The status bar says *Saved to your account*,
+  *Saving…*, or what is wrong.
+- **A copy stays in the browser** as well, written immediately and when the
+  page closes. Without a connection the editor keeps working on that copy
+  (*Offline: kept in this browser*), retries every few seconds, and sends it
+  as soon as the server is reachable again, also after a reload. Leaving the
+  page only asks for confirmation when neither the account nor the browser
+  could store the latest changes.
+- **Edits in two places.** Each save says which version it builds on. If the
+  project was saved elsewhere in the meantime (another tab or computer), the
+  save is refused and the editor offers *Keep both* (your version becomes a
+  new project), *Keep mine* or *Use the other*. Nothing is overwritten
+  without asking.
+- **What opens at the start:** the project this browser was working on (the
+  account's version if it changed elsewhere and this browser has no unsaved
+  changes); otherwise the most recently edited project, e.g. from another
+  computer. The first time after upgrading, a design that was only in the
+  browser becomes the user's first project, so nothing is lost. A new user
+  starts with the Old Faithful example as their first project.
+- **Undo history** belongs to the open project and starts fresh when you open
+  another one.
+
+API (JSON, logged-in users only; another user's project answers 404):
+
+| Request                        | Does                                                                   |
+| ------------------------------ | ---------------------------------------------------------------------- |
+| `GET /api/projects`            | List: id, name, version, created/updated time (newest first)           |
+| `POST /api/projects`           | Create: `{ name, project }`                                            |
+| `GET /api/projects/:id`        | One project, with the design                                           |
+| `PUT /api/projects/:id`        | Save `{ project, baseVersion }` (409 if changed since; `force: true` overrides), or rename `{ name }` |
+| `DELETE /api/projects/:id`     | Delete                                                                 |
+
+Limits: 1 MB per design, 500 projects per user, names up to 120 characters.
+Projects are in the `projects` table of the same SQLite database and are
+deleted with the user's account; back up `data/droptoapp.db` regularly, it
+now holds your users' work.
 
 ## Landing page and SEO
 
@@ -348,9 +461,14 @@ src/
     gallery.ts        the template gallery: texts and app.R of each template
     shinylive.ts      Run: shinylive links (app.R in the #fragment), packages used
     lzstring.ts       lz-string compression, as used by shinylive links
-  state/store.ts      reducer with undo/redo history and edit coalescing
+    debug.ts          browser(): breakpoints in the code view, and the debugger used by Run
+  state/store.ts      reducer with undo/redo history (design + exact code) and edit coalescing
   ui/                 React components (canvas, palette, outline, properties, code view)
     platform.ts       file save/open, clipboard, storage (swap for Electron/Tauri APIs)
+    autosave.ts       the browser copy: debounced, flushed on page hide/close, reports failures
+    cloudSave.ts      saving the open project to the account: retries offline, detects edits elsewhere
+    projects.ts       projects API client, and which project to open at the start
+    ProjectsDialog.tsx  My projects
     auth.ts           current user and server settings, log out
     RunPanel.tsx      the live app (shinylive iframe), restart and links
     TemplateGallery.tsx  the Templates… dialog
@@ -359,12 +477,15 @@ server/
   app.ts              routes: landing page, /templates, /static, robots.txt, sitemap.xml, /api/*, the editor
   gallery.ts          the public template pages (/templates, /templates/<slug>)
   auth.ts             scrypt passwords, sessions, rate limiting, cookies
-  db.ts               SQLite schema (users, sessions)
-  brevo.ts            newsletter sign-up via the Brevo API
+  db.ts               SQLite schema (users, sessions, projects, password resets)
+  passwordReset.ts    single-use, expiring reset tokens (stored hashed)
+  reset-password.html the page the reset email links to
+  projects.ts         projects in the account: list, open, create, save (with version check), delete
+  brevo.ts            Brevo: newsletter sign-up, and transactional emails (account and login notices, password reset)
   config.ts           settings from .env
   login.html          the landing page with the login / registration form
   public/             images for the landing page and link previews; templates/ has the template screenshots
-tests/                node:test tests (model, components, app.R round-trips, templates, shinylive links, server), run with tsx
+tests/                node:test tests (model, components, app.R round-trips, undo history, projects API, templates, browser() debugging, shinylive links, server), run with tsx
 ```
 
 **To add a component:** add one entry to `defs` in `src/model/components.ts`
@@ -384,8 +505,7 @@ code are all derived from it.
 
 ## Roadmap
 
-1. **Designs in the account.** Save designs on the server per user, so they
-   follow people across browsers and devices.
+1. **Sharing.** Share a project read-only by link, or with another account.
 2. **More from Run.** Upload data files (CSV) alongside `app.R`, show R
    errors from the running app inside the editor, and optionally self-host
    shinylive and the webR packages.

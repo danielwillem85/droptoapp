@@ -2,11 +2,11 @@ import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { generateApp } from '../model/codegen';
 import { templateBySlug, templateProject } from '../model/gallery';
 import type { AppTemplate } from '../model/gallery';
-import { emptyProject, isProject, starterProject } from '../model/templates';
+import { emptyProject, isProject } from '../model/templates';
 import { walk } from '../model/tree';
 import type { Project } from '../model/types';
 import { validate } from '../model/validate';
-import { initialState, reducer } from '../state/store';
+import { initialState, reducer, stateJson } from '../state/store';
 import { Canvas } from './Canvas';
 import { CodeView } from './CodeView';
 import { EditorContext } from './context';
@@ -15,43 +15,63 @@ import { Palette } from './Palette';
 import { logout } from './auth';
 import type { Settings, User } from './auth';
 import { openTextFile, saveTextFile, storage } from './platform';
+import { useAutosave } from './autosave';
+import { useCloudSave } from './cloudSave';
+import { AUTOSAVE_PREFIX, projectName, projectsApi, toCloud } from './projects';
+import type { CloudProject, ProjectSummary, Startup } from './projects';
+import { ProjectsDialog } from './ProjectsDialog';
 import { PropertiesPanel } from './PropertiesPanel';
 import { RunPanel } from './RunPanel';
 import { TemplateGallery } from './TemplateGallery';
 
-const AUTOSAVE_PREFIX = 'droptoapp:autosave';
-/** Keys used before the rename (per user, and from before accounts existed). */
-const LEGACY_AUTOSAVE_PREFIX = 'truth-editor:autosave';
 type View = 'design' | 'split' | 'code';
 type Device = 'desktop' | 'tablet' | 'phone';
 const DEVICE_WIDTH: Record<Device, number | null> = { desktop: null, tablet: 820, phone: 400 };
-
-function loadAutosave(key: string): Project | null {
-  const raw = storage.load(key);
-  if (!raw) return null;
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return isProject(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
 
 function isTyping(el: EventTarget | null): boolean {
   const t = el as HTMLElement | null;
   return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
 }
 
-export function App({ user, settings }: { user: User; settings: Settings }) {
-  // Autosave per account, so people sharing a browser don't see each other's designs.
-  // Designs autosaved by earlier versions (under the old name) are picked up once.
+/**
+ * Size of the whole editor (CSS zoom), so more fits on the screen. Remembered per browser.
+ * 85% by default: the canvas shows the Shiny app at a scale that gives an overview of the page.
+ */
+const ZOOM_KEY = 'droptoapp:zoom';
+const ZOOM_STEPS = [0.7, 0.75, 0.8, 0.85, 0.9, 1, 1.1, 1.25];
+const DEFAULT_ZOOM = 0.85;
+function initialZoom(): number {
+  const z = Number(storage.load(ZOOM_KEY));
+  return ZOOM_STEPS.includes(z) ? z : DEFAULT_ZOOM;
+}
+
+const STATUS_TEXT = {
+  saved: 'Saved to your account',
+  pending: 'Saving…',
+  saving: 'Saving…',
+  offline: 'Offline: kept in this browser',
+  conflict: 'Not saved: changed elsewhere',
+  loggedOut: 'Logged out: kept in this browser',
+} as const;
+
+export function App({ user, settings, startup }: { user: User; settings: Settings; startup: Startup }) {
+  // The open project (see projects.ts for which one that is at the start). A copy is also kept in
+  // this browser, per account, so work survives a lost connection.
   const autosaveKey = `${AUTOSAVE_PREFIX}:${user.id}`;
-  const [state, dispatch] = useReducer(reducer, null, () => initialState(
-      loadAutosave(autosaveKey) ??
-        loadAutosave(`${LEGACY_AUTOSAVE_PREFIX}:${user.id}`) ??
-        loadAutosave(LEGACY_AUTOSAVE_PREFIX) ??
-        starterProject(),
-    ));
+  const [state, dispatch] = useReducer(reducer, null, () => initialState(startup.project));
+  const [cloud, setCloud] = useState<CloudProject | null>(startup.cloud);
+  const [showProjects, setShowProjects] = useState(false);
+  const [zoom, setZoomState] = useState(initialZoom);
+  const setZoom = (z: number) => {
+    setZoomState(z);
+    storage.save(ZOOM_KEY, String(z));
+  };
+  const zoomStep = (dir: 1 | -1) => {
+    const i = ZOOM_STEPS.indexOf(zoom);
+    setZoom(ZOOM_STEPS[Math.max(0, Math.min(ZOOM_STEPS.length - 1, i + dir))]);
+  };
+  /** Saving, opening or creating a project: buttons that start another one wait. */
+  const [busy, setBusy] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [view, setView] = useState<View>('split');
   const [device, setDevice] = useState<Device>('desktop');
@@ -73,14 +93,23 @@ export function App({ user, settings }: { user: User; settings: Settings }) {
     return n - 3; // page, sidebar and main are always there
   }, [state.root]);
 
-  // Autosave (debounced).
+  // Saved to the account about a second after each change ...
+  const designJson = useMemo(() => stateJson(state), [state.root, state.codeDraft]);
+  const cloudSave = useCloudSave({
+    cloud,
+    setCloud,
+    value: designJson,
+    newName: () => projectName(String(state.root.props.title ?? '')),
+    initiallySynced: startup.synced && !!startup.cloud,
+  });
+  const cloudOk = cloudSave.status === 'saved' || cloudSave.status === 'pending' || cloudSave.status === 'saving';
+  // ... and to this browser at once, with which project it is and whether the account has it.
+  const autosaveValue = `${designJson.slice(0, -1)},"cloud":${JSON.stringify(cloud)},"synced":${cloudSave.status === 'saved'}}`;
+  const autosave = useAutosave(autosaveKey, autosaveValue, { safeElsewhere: () => cloudSave.status === 'saved' });
+
   useEffect(() => {
-    const t = setTimeout(() => {
-      const project: Project = { format: 'droptoapp/v1', root: state.root, code: state.codeDraft ?? undefined };
-      storage.save(autosaveKey, JSON.stringify(project));
-    }, 300);
-    return () => clearTimeout(t);
-  }, [state.root, state.codeDraft]);
+    document.title = cloud ? `${cloud.name} · DropToApp` : 'DropToApp';
+  }, [cloud?.name]);
 
   const startRun = () => {
     if (state.codeError) return;
@@ -122,11 +151,112 @@ export function App({ user, settings }: { user: User; settings: Settings }) {
     setTimeout(() => setMessage(null), ms);
   };
 
+  useEffect(() => {
+    if (startup.notice) flash(startup.notice, 6000);
+  }, []);
+
+  // ------------------------------------------------------------ projects
+
+  /** Save the open project before switching to another one. False (with a message) when that failed. */
+  const leaveCurrent = async (): Promise<boolean> => {
+    if (await cloudSave.flush()) return true;
+    flash(
+      cloudSave.status === 'conflict'
+        ? 'First choose what to do with the changes made elsewhere (see the message below).'
+        : "Your changes couldn't be saved to your account yet (no connection?). Try again in a moment.",
+      6000,
+    );
+    return false;
+  };
+
+  /** Show a project that is already saved in the account. */
+  const show = (project: Project, meta: CloudProject) => {
+    const next = initialState(project);
+    cloudSave.adopt(stateJson(next));
+    setCloud(meta);
+    dispatch({ type: 'replace', state: next });
+    setRunning(false);
+  };
+
+  /** Run a project action: one at a time, and report failures. */
+  const task = async (fn: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await fn();
+    } catch (e) {
+      flash(`Something went wrong: ${(e as Error).message}`, 6000);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Save `project` as a new project in the account and open it. */
+  const createAndOpen = (project: Project, baseName: string, message: (name: string) => string, saveFirst = true) =>
+    task(async () => {
+      if (saveFirst && !(await leaveCurrent())) return;
+      const next = initialState(project);
+      const json = stateJson(next);
+      const taken = await projectsApi.list().then((ps) => ps.map((p) => p.name), () => []);
+      const created = await projectsApi.create(projectName(baseName, taken), json);
+      cloudSave.adopt(json);
+      setCloud(toCloud(created));
+      dispatch({ type: 'replace', state: next });
+      setRunning(false);
+      setShowProjects(false);
+      flash(message(created.name), 5000);
+    });
+
+  const openProject = (p: Pick<ProjectSummary, 'id'>, saveFirst = true) =>
+    task(async () => {
+      if (saveFirst && !(await leaveCurrent())) return;
+      const remote = await projectsApi.get(p.id);
+      show(remote.project, toCloud(remote));
+      setShowProjects(false);
+      flash(`Opened ${remote.name}`);
+    });
+
+  const duplicateProject = (p: ProjectSummary) =>
+    task(async () => {
+      if (!(await leaveCurrent())) return;
+      const source = await projectsApi.get(p.id);
+      const taken = await projectsApi.list().then((ps) => ps.map((x) => x.name));
+      const copy = await projectsApi.create(projectName(`${source.name} (copy)`, taken), JSON.stringify(source.project));
+      show(source.project, toCloud(copy));
+      setShowProjects(false);
+      flash(`Opened ${copy.name}, a copy of ${source.name}`);
+    });
+
+  const deleteProject = async (p: ProjectSummary): Promise<void> => {
+    const isCurrent = p.id === cloud?.id;
+    if (isCurrent) {
+      await cloudSave.flush(); // nothing on its way that would bring the project back
+      cloudSave.adopt(designJson);
+    }
+    await projectsApi.remove(p.id);
+    if (!isCurrent) return;
+    // The open project is gone: open the next one, or start a new one.
+    const remaining = await projectsApi.list().catch(() => []);
+    if (remaining.length) await openProject(remaining[0], false);
+    else await createAndOpen(emptyProject(), 'Untitled design', (n) => `Started a new project, ${n}`, false);
+  };
+
+  const newProject = () => createAndOpen(emptyProject(), 'Untitled design', (n) => `Started ${n}. Your previous design is in My projects.`);
+
   const openTemplate = (t: AppTemplate) => {
     setShowTemplates(false);
-    dispatch({ type: 'load', project: templateProject(t) });
-    flash(`Opened the ${t.title} template. Undo brings back your previous design.`, 5000);
+    void createAndOpen(templateProject(t), t.title, (n) => `Opened the ${t.title} template as ${n}. Your previous design is in My projects.`);
   };
+
+  /** Changed elsewhere: keep both by saving this version as a new project. */
+  const keepBoth = () =>
+    task(async () => {
+      const name = projectName(`${cloud?.name ?? 'Untitled design'} (my version)`, await projectsApi.list().then((ps) => ps.map((p) => p.name)));
+      const created = await projectsApi.create(name, designJson);
+      cloudSave.adopt(designJson);
+      setCloud(toCloud(created));
+      flash(`Saved your version as ${created.name}. The other version is still in My projects.`, 6000);
+    });
 
   // /?template=<slug> (the "Open in the editor" links on the template pages) opens that template once.
   const templateParamHandled = useRef(false);
@@ -142,25 +272,28 @@ export function App({ user, settings }: { user: User; settings: Settings }) {
     if (t && !state.codeError) openTemplate(t);
   }, []);
 
+  /** Open a file from the computer (an app.R or a downloaded design) as a new project. */
   const open = async () => {
     const file = await openTextFile('.R,.r,.json');
     if (!file) return;
+    const base = file.name.replace(/(\.shinydesign)?\.(json|r)$/i, '');
+    const done = (n: string) => `Opened ${file.name} as ${n}. Your previous design is in My projects.`;
     if (/\.r$/i.test(file.name)) {
       // An R script: the code becomes the source of truth and the design is rebuilt from it.
-      dispatch({ type: 'load', project: { ...emptyProject(), code: file.text } });
-      flash(`Opened ${file.name}`);
+      await createAndOpen({ ...emptyProject(), code: file.text }, base === 'app' ? 'Imported app' : base, done);
       return;
     }
+    let parsed: unknown;
     try {
-      const parsed: unknown = JSON.parse(file.text);
-      if (!isProject(parsed)) throw new Error('not a DropToApp project');
-      dispatch({ type: 'load', project: parsed });
-      flash(`Opened ${file.name}`);
+      parsed = JSON.parse(file.text);
     } catch {
-      flash(`${file.name} is not a DropToApp project or R script`);
+      parsed = null;
     }
+    if (!isProject(parsed)) return flash(`${file.name} is not a DropToApp project or R script`);
+    await createAndOpen(parsed, base, done);
   };
 
+  /** Download the design as a file (a backup, or to share). */
   const save = () => {
     const project: Project = { format: 'droptoapp/v1', root: state.root, code: state.codeDraft ?? undefined };
     const name = String(state.root.props.title || 'shiny-app').replace(/[^\w-]+/g, '-').toLowerCase();
@@ -172,22 +305,39 @@ export function App({ user, settings }: { user: User; settings: Settings }) {
 
   return (
     <EditorContext.Provider value={{ state, dispatch }}>
-      <div className={`app view-${view}`}>
+      <div className={`app view-${view}`} style={{ zoom }}>
         <header className="toolbar">
           <div className="brand">
-            <span className="logo">◆</span> DropToApp <span className="brand-sub">Shiny UI designer</span>
+            <span className="logo">◆</span>
+            <span className="brand-text"> DropToApp</span>
           </div>
+          <button
+            className="project-button"
+            onClick={() => setShowProjects(true)}
+            title={`${cloud ? `${cloud.name}\n` : ''}My projects: open, rename or delete your saved designs`}
+          >
+            <span className="project-name">{cloud?.name ?? 'Not saved yet'}</span>
+            <span className="project-caret" aria-hidden="true">
+              ▾
+            </span>
+          </button>
           <div className="tool-group">
-            <button disabled={draftLocked} onClick={() => dispatch({ type: 'load', project: emptyProject() })} title={draftLocked ? draftLockHint : 'Start an empty design (undo brings the old one back)'}>
+            <button disabled={draftLocked || busy} onClick={newProject} title={draftLocked ? draftLockHint : 'Start a new, empty project'}>
               New
             </button>
-            <button disabled={draftLocked} onClick={() => setShowTemplates(true)} title={draftLocked ? draftLockHint : 'Start from a complete example app'}>
+            <button disabled={draftLocked || busy} onClick={() => setShowTemplates(true)} title={draftLocked ? draftLockHint : 'Start a new project from a complete example app'}>
               Templates…
             </button>
-            <button disabled={draftLocked} onClick={open} title={draftLocked ? draftLockHint : 'Open a saved design (.json) or an existing app.R'}>
+            <button disabled={draftLocked || busy} onClick={open} title={draftLocked ? draftLockHint : 'Open an app.R or a downloaded design (.json) from your computer as a new project'}>
               Open…
             </button>
-            <button onClick={save}>Save</button>
+            <button
+              onClick={save}
+              aria-label="Download"
+              title="Download this design as a file (.shinydesign.json). Projects are saved in your account automatically."
+            >
+              ⤓<span className="btn-label"> Download</span>
+            </button>
           </div>
           <div className="tool-group">
             <button disabled={draftLocked || !state.past.length} onClick={() => dispatch({ type: 'undo' })} aria-label="Undo" title={draftLocked ? draftLockHint : 'Undo (Ctrl+Z)'}>
@@ -235,6 +385,7 @@ export function App({ user, settings }: { user: User; settings: Settings }) {
               disabled={loggingOut}
               onClick={async () => {
                 setLoggingOut(true);
+                await cloudSave.flush();
                 await logout();
               }}
             >
@@ -273,6 +424,66 @@ export function App({ user, settings }: { user: User; settings: Settings }) {
 
         {showTemplates ? <TemplateGallery onPick={openTemplate} onClose={() => setShowTemplates(false)} /> : null}
 
+        {showProjects ? (
+          <ProjectsDialog
+            current={cloud}
+            busy={busy || draftLocked}
+            onOpen={(p) => void openProject(p)}
+            onNew={() => void newProject()}
+            onTemplates={() => {
+              setShowProjects(false);
+              setShowTemplates(true);
+            }}
+            onDuplicate={(p) => void duplicateProject(p)}
+            onRenamed={(p) => {
+              if (p.id === cloud?.id) setCloud((c) => (c ? { ...c, name: p.name } : c));
+            }}
+            onDelete={deleteProject}
+            onClose={() => setShowProjects(false)}
+          />
+        ) : null}
+
+        {cloudSave.status === 'conflict' ? (
+          <div className="save-banner" role="alert">
+            <span>
+              <b>This project was changed in another window or on another computer</b>
+              {cloudSave.theirs ? ` (${new Date(cloudSave.theirs.updatedAt).toLocaleString()})` : ''}. Your changes here are
+              not saved to your account yet.
+            </span>
+            <button className="primary" disabled={busy} onClick={() => void keepBoth()} title="Save this version as a new project; the other one stays as it is">
+              Keep both
+            </button>
+            <button disabled={busy} onClick={() => void cloudSave.keepMine()} title="Replace the other version with this one">
+              Keep mine
+            </button>
+            <button disabled={busy} onClick={() => cloud && void openProject(cloud, false)} title="Throw away the changes here and open the other version">
+              Use the other
+            </button>
+          </div>
+        ) : cloudSave.status === 'loggedOut' ? (
+          <div className="save-banner" role="alert">
+            <span>
+              <b>You were logged out.</b> Your changes are kept in this browser and saved to your account when you log in again.
+            </span>
+            <a className="button-link" href={`/login?next=${encodeURIComponent(location.pathname)}`}>
+              Log in
+            </a>
+          </div>
+        ) : null}
+
+        {autosave.status === 'failed' && !cloudOk ? (
+          <div className="save-failed" role="alert">
+            <span>
+              <b>Your changes are not being saved.</b> This browser refused to store the design (its storage may be
+              full or blocked). Everything is still open here: download a copy to keep it safe.
+            </span>
+            <button className="primary" onClick={save}>
+              Save a copy
+            </button>
+            <button onClick={autosave.retry}>Try again</button>
+          </div>
+        ) : null}
+
         <footer className="statusbar">
           <span>
             {count} component{count === 1 ? '' : 's'}
@@ -282,7 +493,33 @@ export function App({ user, settings }: { user: User; settings: Settings }) {
           </span>
           <span className="spacer" />
           {message ? <span className="status-message">{message}</span> : null}
+          <button
+            className={`save-status is-${cloudSave.status}`}
+            onClick={() => setShowProjects(true)}
+            title={
+              cloudSave.status === 'offline'
+                ? 'No connection to the server. Your changes are kept in this browser and saved to your account automatically when the connection is back.'
+                : 'Your project is saved in your account automatically. Click for My projects.'
+            }
+          >
+            {STATUS_TEXT[cloudSave.status]}
+          </button>
           <span className="hint">Drag from the left or click to add · Edit app.R directly in the code view · Ctrl+Z undo</span>
+          <span className="zoom-control" role="group" aria-label="Editor size">
+            <button onClick={() => zoomStep(-1)} disabled={zoom === ZOOM_STEPS[0]} aria-label="Smaller" title="Smaller: more fits on the screen">
+              −
+            </button>
+            <button
+              className="zoom-value"
+              onClick={() => setZoom(DEFAULT_ZOOM)}
+              title={`Editor size. Click to go back to ${Math.round(DEFAULT_ZOOM * 100)}%.`}
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button onClick={() => zoomStep(1)} disabled={zoom === ZOOM_STEPS[ZOOM_STEPS.length - 1]} aria-label="Larger" title="Larger: easier to read">
+              +
+            </button>
+          </span>
         </footer>
       </div>
     </EditorContext.Provider>

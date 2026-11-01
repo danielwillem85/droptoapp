@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { COMPONENTS } from '../model/components';
+import { browserLines, toggleBreakpoint } from '../model/debug';
 import { tokenizeR } from '../model/rHighlight';
 import { findNode } from '../model/tree';
 import type { Issue } from '../model/validate';
@@ -17,6 +18,7 @@ const PADDING_TOP = 10;
 export function CodeView({ generated, issues }: { generated: string; issues: Issue[] }) {
   const { state, dispatch } = useEditor();
   const [copied, setCopied] = useState(false);
+  const [hint, setHint] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const areaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -24,6 +26,19 @@ export function CodeView({ generated, issues }: { generated: string; issues: Iss
   const error = state.codeError;
   const tokens = useMemo(() => tokenizeR(code), [code]);
   const lineCount = code.split('\n').length;
+  const breakpoints = useMemo(() => new Set(browserLines(code)), [code]);
+
+  // Clicking a line number adds browser() above that line, or removes it (like RStudio's margin).
+  const toggle = (line: number) => {
+    if (error) return;
+    const next = toggleBreakpoint(code, line);
+    if (next === null) {
+      setHint('browser() can go on a line inside a function, such as the server or a render block, at the start of a statement.');
+      setTimeout(() => setHint(null), 4000);
+      return;
+    }
+    dispatch({ type: 'setCode', code: next });
+  };
 
   // Line of the component selected on the canvas (inputs/outputs, found by id).
   const selectedLine = useMemo(() => {
@@ -64,6 +79,11 @@ export function CodeView({ generated, issues }: { generated: string; issues: Iss
       <div className="code-toolbar">
         <span className="code-file">app.R</span>
         <span className={`code-status ${status.cls}`}>{status.text}</span>
+        {hint ? (
+          <span className="code-hint" title={hint}>
+            {hint}
+          </span>
+        ) : null}
         <span className="spacer" />
         {state.codeDraft !== null && !error && state.codeDraft !== generated ? (
           <button
@@ -108,9 +128,23 @@ export function CodeView({ generated, issues }: { generated: string; issues: Iss
         </ul>
       ) : null}
       <div className="code-scroll" ref={scrollRef}>
-        <pre className="gutter" aria-hidden>
+        <pre className={`gutter${error ? '' : ' is-clickable'}`} aria-hidden>
           {Array.from({ length: lineCount }, (_, i) => (
-            <span key={i} className={error?.line === i + 1 ? 'is-error' : selectedLine === i + 1 ? 'is-selected' : undefined}>
+            <span
+              key={i}
+              className={[
+                error?.line === i + 1 ? 'is-error' : selectedLine === i + 1 ? 'is-selected' : '',
+                breakpoints.has(i + 1) ? 'is-breakpoint' : '',
+              ].join(' ')}
+              title={
+                breakpoints.has(i + 1)
+                  ? 'browser(): Run stops here and opens the debugger. Click to remove.'
+                  : error
+                    ? undefined
+                    : 'Click to add browser() before this line'
+              }
+              onClick={() => toggle(i + 1)}
+            >
               {i + 1}
               {'\n'}
             </span>

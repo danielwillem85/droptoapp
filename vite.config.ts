@@ -15,6 +15,7 @@ export default defineConfig({
       '/login': server,
       '/static': server,
       '/templates': server,
+      '/reset-password': server,
       '/robots.txt': server,
       '/sitemap.xml': server,
     },

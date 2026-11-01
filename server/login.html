@@ -111,7 +111,7 @@
       "name": "Where are my designs stored?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "In your own browser. Designs are autosaved locally and never uploaded to our servers; you can save a design file or export app.R at any time. Your account is only used to sign you in. When you click Run, the code is handed to shinylive in the part of the link after #, which browsers don't send to servers."
+        "text": "In your account. Every design is saved as a project automatically while you work, so it is there on any computer you log in on, and a copy is kept in your browser in case the connection drops. You can also download a design file or export app.R at any time. When you click Run, the code is handed to shinylive in the part of the link after #, which browsers don't send to servers."
       }
     },
     {
@@ -248,8 +248,33 @@
       .error.is-shown {
         display: block;
       }
-      form:not(.is-register) .register-only {
+      form:not(.is-register) .register-only,
+      form:not(.is-login) .login-only,
+      form:not(.is-forgot) .forgot-only,
+      form.is-forgot .password-field {
         display: none;
+      }
+      .forgot-intro {
+        margin: 0;
+        font-size: 14px;
+        color: var(--muted);
+      }
+      .forgot-link {
+        align-self: flex-end;
+        margin-top: -6px;
+        font-size: 13px;
+        color: var(--accent);
+      }
+      .notice {
+        display: none;
+        padding: 9px 11px;
+        border-radius: 7px;
+        color: var(--text);
+        background: var(--accent-soft);
+        font-size: 13px;
+      }
+      .notice.is-shown {
+        display: block;
       }
       dialog {
         width: min(420px, calc(100vw - 32px));
@@ -685,6 +710,9 @@
           <button type="button" role="tab" id="tab-register" aria-selected="false">Create account</button>
         </div>
         <form id="form" novalidate>
+          <p class="forgot-only forgot-intro">
+            Enter the email address of your account and we'll send you a link to choose a new password.
+          </p>
           <label class="field register-only">
             Name <span class="hint">optional</span>
             <input type="text" name="name" autocomplete="name" maxlength="100" />
@@ -693,21 +721,23 @@
             Email
             <input type="email" name="email" autocomplete="email" required />
           </label>
-          <label class="field">
+          <label class="field password-field">
             Password
             <input type="password" name="password" autocomplete="current-password" required minlength="8" />
             <span class="hint register-only">At least 8 characters.</span>
           </label>
+          <a class="forgot-link login-only" href="/login?mode=forgot" data-mode="forgot">Forgot your password?</a>
           <label class="check register-only">
             <input type="checkbox" name="newsletter" {{NEWSLETTER_CHECKED}} />
             <span>Send me the DropToApp newsletter with news, tips and updates.</span>
           </label>
           <div class="error" id="error" role="alert"></div>
+          <div class="notice" id="notice" role="status"></div>
           <button type="submit" class="primary" id="submit">Log in</button>
         </form>
       </div>
       <p class="switch" id="switch"></p>
-            <p class="account-note">Free to use. Your designs stay in your browser.</p>
+            <p class="account-note">Free to use. Your projects are saved in your account.</p>
           </div>
         </div>
       </section>
@@ -894,7 +924,7 @@
           </details>
           <details>
             <summary>Where are my designs stored?</summary>
-            <p>In your own browser. Designs are autosaved locally and never uploaded to our servers; you can save a design file or export <code>app.R</code> at any time. Your account is only used to sign you in. When you click Run, the code is handed to shinylive in the part of the link after #, which browsers don&#39;t send to servers.</p>
+            <p>In your account. Every design is saved as a project automatically while you work, so it is there on any computer you log in on, and a copy is kept in your browser in case the connection drops. You can also download a design file or export <code>app.R</code> at any time. When you click Run, the code is handed to shinylive in the part of the link after #, which browsers don&#39;t send to servers.</p>
           </details>
           <details>
             <summary>Is DropToApp free?</summary>
@@ -939,7 +969,8 @@
         var tabRegister = document.getElementById('tab-register');
         var switchText = document.getElementById('switch');
         var params = new URLSearchParams(location.search);
-        var mode = params.get('mode') === 'register' ? 'register' : 'login';
+        var notice = document.getElementById('notice');
+        var mode = params.get('mode') === 'register' ? 'register' : params.get('mode') === 'forgot' ? 'forgot' : 'login';
 
         function safeNext(n) {
           if (!n || n.charAt(0) !== '/' || n.indexOf('//') === 0 || n.indexOf('/\\') === 0 || n.indexOf('/login') === 0) return '/';
@@ -950,16 +981,30 @@
           mode = m;
           var reg = m === 'register';
           form.classList.toggle('is-register', reg);
-          tabLogin.setAttribute('aria-selected', String(!reg));
+          form.classList.toggle('is-login', m === 'login');
+          form.classList.toggle('is-forgot', m === 'forgot');
+          tabLogin.setAttribute('aria-selected', String(m === 'login'));
           tabRegister.setAttribute('aria-selected', String(reg));
-          submit.textContent = reg ? 'Create account' : 'Log in';
+          submit.textContent = reg ? 'Create account' : m === 'forgot' ? 'Send me a link' : 'Log in';
+          submit.disabled = false;
           form.password.setAttribute('autocomplete', reg ? 'new-password' : 'current-password');
           switchText.innerHTML = reg
             ? 'Already have an account? <a data-mode="login">Log in</a>'
-            : 'New here? <a data-mode="register">Create an account</a>';
+            : m === 'forgot'
+              ? 'Remembered it? <a data-mode="login">Log in</a>'
+              : 'New here? <a data-mode="register">Create an account</a>';
           error.classList.remove('is-shown');
+          notice.classList.remove('is-shown');
         }
 
+        form.addEventListener('click', function (e) {
+          var m = e.target && e.target.getAttribute && e.target.getAttribute('data-mode');
+          if (m) {
+            e.preventDefault();
+            setMode(m);
+            form.email.focus();
+          }
+        });
         tabLogin.onclick = function () { setMode('login'); };
         tabRegister.onclick = function () { setMode('register'); };
         switchText.onclick = function (e) {
@@ -977,6 +1022,8 @@
         form.onsubmit = function (e) {
           e.preventDefault();
           error.classList.remove('is-shown');
+          notice.classList.remove('is-shown');
+          if (mode === 'forgot') return sendResetLink();
           if (mode === 'register') {
             // Check the obvious mistakes first, so the newsletter question isn't asked for nothing.
             if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.value.trim())) return showError('Please enter a valid email address.');
@@ -1003,6 +1050,34 @@
         dialog.addEventListener('click', function (e) {
           if (e.target === dialog) dialog.close();
         });
+
+        // "Forgot your password?": the answer is the same whether or not the address has an account.
+        function sendResetLink() {
+          var email = form.email.value.trim();
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showError('Please enter a valid email address.');
+          submit.disabled = true;
+          fetch('/api/password/forgot', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ email: email }),
+          })
+            .then(function (res) {
+              return res.json().catch(function () { return {}; }).then(function (data) {
+                if (!res.ok) throw new Error(data.error || 'Something went wrong. Please try again.');
+                notice.textContent =
+                  'If there is an account for ' + email + ', we have sent it an email with a link to choose a new password. ' +
+                  'The link works for an hour. No email after a few minutes? Check your spam folder.';
+                notice.classList.add('is-shown');
+                submit.textContent = 'Send it again';
+                submit.disabled = false;
+              });
+            })
+            .catch(function (err) {
+              showError(err.message === 'Failed to fetch' ? 'Cannot reach the server. Please try again.' : err.message);
+              submit.disabled = false;
+            });
+        }
 
         function send() {
           var body = { email: form.email.value, password: form.password.value };

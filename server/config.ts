@@ -31,6 +31,8 @@ export interface Config {
     apiUrl: string;
     /** Verified Brevo sender for account-creation notifications. */
     senderEmail: string;
+    /** Who gets an email for every new account and every login (NOTIFY_EMAILS, comma-separated). */
+    notifyEmails: string[];
   };
 }
 
@@ -55,6 +57,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, root = process.
       listId: Number.isInteger(listId) && listId > 0 ? listId : null,
       apiUrl: (env.BREVO_API_URL || 'https://api.brevo.com/v3').replace(/\/+$/, ''),
       senderEmail: env.BREVO_SENDER_EMAIL?.trim() || 'info@droptoapp.com',
+      notifyEmails: (env.NOTIFY_EMAILS ?? 'danielvdpalm@gmail.com')
+        .split(',')
+        .map((e) => e.trim())
+        .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)),
     },
   };
 }

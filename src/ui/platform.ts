@@ -46,11 +46,13 @@ export const storage = {
       return null;
     }
   },
-  save(key: string, value: string) {
+  /** Returns false when the browser refused (storage full, blocked, private mode). */
+  save(key: string, value: string): boolean {
     try {
       localStorage.setItem(key, value);
+      return true;
     } catch {
-      /* storage unavailable: autosave is a convenience only */
+      return false;
     }
   },
 };

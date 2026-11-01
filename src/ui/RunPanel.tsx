@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { instrumentForRun } from '../model/debug';
 import { packagesUsed, shinyliveUrl } from '../model/shinylive';
 
 /**
@@ -7,6 +8,7 @@ import { packagesUsed, shinyliveUrl } from '../model/shinylive';
  * which is never sent to a server.
  *
  * A run uses the code as it was when it started; after edits, Restart picks up the latest version.
+ * browser() calls open DropToApp's debugger in the running app (see model/debug.ts).
  */
 export function RunPanel({
   code,
@@ -26,8 +28,11 @@ export function RunPanel({
   const [loaded, setLoaded] = useState(false);
   const stale = code !== run.code;
 
-  const frameUrl = useMemo(() => shinyliveUrl(run.code, { base: shinyliveBase, header: false }), [run.code, shinyliveBase]);
-  const tabUrl = useMemo(() => shinyliveUrl(code, { base: shinyliveBase }), [code, shinyliveBase]);
+  // The app runs with browser() going to the debugger; shinylive's own editor gets app.R as it is.
+  const running = useMemo(() => instrumentForRun(run.code), [run.code]);
+  const latest = useMemo(() => instrumentForRun(code), [code]);
+  const frameUrl = useMemo(() => shinyliveUrl(running.code, { base: shinyliveBase, header: false }), [running.code, shinyliveBase]);
+  const tabUrl = useMemo(() => shinyliveUrl(latest.code, { base: shinyliveBase }), [latest.code, shinyliveBase]);
   const editorUrl = useMemo(() => shinyliveUrl(code, { base: shinyliveBase, mode: 'editor' }), [code, shinyliveBase]);
   const packages = useMemo(() => packagesUsed(run.code), [run.code]);
 
@@ -44,6 +49,14 @@ export function RunPanel({
         <b>Live app</b>
         <span className="run-sub">running in your browser with webR</span>
         <span className="spacer" />
+        {running.lines.length ? (
+          <span
+            className="run-debug"
+            title="When the app reaches a browser() call, a debugger opens in the app with the variables at that moment and an R prompt."
+          >
+            ● Debugging: browser() on line{running.lines.length > 1 ? 's' : ''} {running.lines.join(', ')}
+          </span>
+        ) : null}
         {stale ? <span className="run-stale">Code changed since this run</span> : null}
         <button
           className={stale ? 'primary' : ''}

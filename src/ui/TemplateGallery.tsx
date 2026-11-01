@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { TEMPLATES } from '../model/gallery';
 import type { AppTemplate } from '../model/gallery';
 
-/** "Templates…": complete starter apps. Picking one replaces the design (Undo brings the old one back). */
+/** "Templates…": complete starter apps. Picking one starts a new project from it. */
 export function TemplateGallery({ onPick, onClose }: { onPick: (t: AppTemplate) => void; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -23,7 +23,7 @@ export function TemplateGallery({ onPick, onClose }: { onPick: (t: AppTemplate) 
         <header className="modal-head">
           <div>
             <h2 id="gallery-title">Start from a template</h2>
-            <p>Complete Shiny apps to change visually or in code. Opening one replaces your current design; Undo brings it back.</p>
+            <p>Complete Shiny apps to change visually or in code. Each one opens as a new project; your current design stays in My projects.</p>
           </div>
           <button ref={closeRef} className="modal-close" onClick={onClose} aria-label="Close">
             ✕

@@ -2,10 +2,12 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import {
+  MIN_PASSWORD,
   RateLimiter,
   SESSION_COOKIE,
   clearedSessionCookie,
   createSession,
+  deleteAllSessions,
   deleteSession,
   dummyPasswordHash,
   hashPassword,
@@ -16,13 +18,16 @@ import {
   validateRegistration,
   verifyPassword,
 } from './auth';
-import { sendAccountNotification, subscribeToNewsletter } from './brevo';
+import { sendAccountNotification, sendLoginNotification, sendPasswordChangedEmail, sendPasswordResetEmail, subscribeToNewsletter } from './brevo';
+import { RESET_MINUTES, consumeResetToken, createResetToken, resetTokenValid } from './passwordReset';
+import { MAX_PROJECT_BYTES, ProjectError, createProject, deleteProject, getProject, listProjects, updateProject } from './projects';
 import { renderGalleryIndex, renderNotFound, renderTemplatePage, templateCards } from './gallery';
 import { TEMPLATES, templateBySlug } from '../src/model/gallery';
 import type { Config } from './config';
 import type { Db, UserRow } from './db';
 
 const LOGIN_TEMPLATE = resolve(import.meta.dirname, 'login.html');
+const RESET_PAGE = resolve(import.meta.dirname, 'reset-password.html');
 /** Public files (images for the landing page and link previews), served without logging in at /static/. */
 const PUBLIC_DIR = resolve(import.meta.dirname, 'public');
 
@@ -73,6 +78,10 @@ export interface AppOptions {
 export function createApp(cfg: Config, db: Db, opts: AppOptions = {}) {
   const authLimiter = new RateLimiter(10, 15 * 60 * 1000); // per IP, login + register
   const emailLimiter = new RateLimiter(10, 15 * 60 * 1000); // per email, login
+  const resetIpLimiter = new RateLimiter(10, 60 * 60 * 1000); // per IP, "forgot password" requests
+  const resetEmailLimiter = new RateLimiter(3, 60 * 60 * 1000); // per email: at most 3 reset emails an hour
+  const resetUseLimiter = new RateLimiter(20, 15 * 60 * 1000); // per IP, attempts to use a reset link
+  const resetPage = readFileSync(RESET_PAGE, 'utf8');
   const background = new Set<Promise<unknown>>();
   const loginTemplate = readFileSync(LOGIN_TEMPLATE, 'utf8').replace(
     '{{NEWSLETTER_CHECKED}}',
@@ -86,6 +95,15 @@ export function createApp(cfg: Config, db: Db, opts: AppOptions = {}) {
     const forwarded = cfg.trustProxy ? String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim() : '';
     const proto = forwarded === 'https' || forwarded === 'http' ? forwarded : cfg.cookieSecure ? 'https' : 'http';
     return `${proto}://${host}`;
+  }
+
+  /**
+   * Address for links in emails. Only SITE_URL, or the request's own address when it is localhost
+   * (development): never an arbitrary Host header, or anyone could have reset links point to their site.
+   */
+  function linkBase(req: IncomingMessage): string | null {
+    if (cfg.siteUrl) return cfg.siteUrl;
+    return /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(String(req.headers.host ?? '')) ? siteUrl(req) : null;
   }
 
   const landingTemplate = loginTemplate.replace('{{TEMPLATE_CARDS}}', templateCards(3));
@@ -117,14 +135,14 @@ export function createApp(cfg: Config, db: Db, opts: AppOptions = {}) {
   const json = (res: ServerResponse, status: number, data: unknown, headers: Record<string, string | string[]> = {}) =>
     send(res, status, JSON.stringify(data), { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers });
 
-  async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+  async function readJson(req: IncomingMessage, limit = 16 * 1024): Promise<Record<string, unknown>> {
     // Requiring a JSON body means plain HTML forms on other sites can't post here (CSRF), together with SameSite cookies.
     if (!String(req.headers['content-type'] ?? '').startsWith('application/json')) throw new HttpError(415, 'Expected JSON.');
     let size = 0;
     const chunks: Buffer[] = [];
     for await (const chunk of req) {
       size += (chunk as Buffer).length;
-      if (size > 16 * 1024) throw new HttpError(413, 'Request too large.');
+      if (size > limit) throw new HttpError(413, 'Request too large.');
       chunks.push(chunk as Buffer);
     }
     try {
@@ -134,6 +152,27 @@ export function createApp(cfg: Config, db: Db, opts: AppOptions = {}) {
     } catch {
       throw new HttpError(400, 'Invalid JSON.');
     }
+  }
+
+  /** Email NOTIFY_EMAILS about a login, in the background (never delays or blocks the login). */
+  function notifyLogin(req: IncomingMessage, user: UserRow, how: string) {
+    const task = sendLoginNotification(
+      cfg.brevo,
+      {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        how,
+        ip: clientIp(req),
+        browser: String(req.headers['user-agent'] ?? '').slice(0, 300),
+        at: new Date().toISOString(),
+      },
+      opts.fetchImpl,
+    ).then((r) => {
+      if (!r.ok && cfg.brevo.apiKey) console.warn(`[login-notification] user ${user.id}: ${r.status}`);
+    });
+    background.add(task);
+    task.finally(() => background.delete(task));
   }
 
   function startSession(res: ServerResponse, user: UserRow, status: number) {
@@ -206,7 +245,83 @@ export function createApp(cfg: Config, db: Db, opts: AppOptions = {}) {
       // Compare against a dummy hash for unknown emails so response times don't reveal which accounts exist.
       const ok = await verifyPassword(password, found?.password_hash ?? (await dummyPasswordHash()));
       if (!found || !ok) throw new HttpError(401, 'Invalid email or password.');
+      notifyLogin(req, found, 'Password');
       return startSession(res, found, 200);
+    }
+
+    // ---------------------------------------------------------- forgotten passwords
+    if (route === 'POST /api/password/forgot') {
+      const body = await readJson(req);
+      const email = normalizeEmail(body.email);
+      if (validateRegistration({ email, password: 'x'.repeat(MIN_PASSWORD), name: undefined }))
+        throw new HttpError(400, 'Please enter a valid email address.');
+      if (!resetIpLimiter.allow(clientIp(req)) || !resetEmailLimiter.allow(email))
+        throw new HttpError(429, 'Too many requests. Please wait a while and try again.');
+      const found = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as unknown as UserRow | undefined;
+      const base = linkBase(req);
+      if (found && !base) console.warn('[password-reset] SITE_URL is not set in .env, so no reset link can be sent.');
+      if (found && base) {
+        const link = `${base}/reset-password?token=${createResetToken(db, found.id)}`;
+        if (!cfg.brevo.apiKey) console.info(`[password-reset] BREVO_API_KEY is not set, so no email was sent. Link for ${email}: ${link}`);
+        else {
+          const task = sendPasswordResetEmail(cfg.brevo, found, link, RESET_MINUTES, opts.fetchImpl).then((r) => {
+            if (!r.ok) console.warn(`[password-reset] ${email}: ${r.status}`);
+          });
+          background.add(task);
+          task.finally(() => background.delete(task));
+        }
+      }
+      // The same answer whether or not there is an account, so this can't be used to find out who has one.
+      return json(res, 200, { ok: true });
+    }
+
+    if (route === 'POST /api/password/check') {
+      const body = await readJson(req);
+      return json(res, 200, { valid: resetTokenValid(db, body.token) });
+    }
+
+    if (route === 'POST /api/password/reset') {
+      if (!resetUseLimiter.allow(clientIp(req))) throw new HttpError(429, 'Too many attempts. Please wait a few minutes and try again.');
+      const body = await readJson(req);
+      const password = body.password;
+      // Check the password first, so a too-short one doesn't use up the link.
+      if (typeof password !== 'string' || password.length < MIN_PASSWORD)
+        throw new HttpError(400, `The password must be at least ${MIN_PASSWORD} characters.`);
+      if (password.length > 200) throw new HttpError(400, 'The password is too long.');
+      const userId = consumeResetToken(db, body.token);
+      if (!userId) throw new HttpError(400, 'This link has expired or was already used. Ask for a new one.');
+      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(await hashPassword(password), userId);
+      deleteAllSessions(db, userId); // log out everywhere, then log in here
+      const changed = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as unknown as UserRow;
+      const base = linkBase(req);
+      const task = sendPasswordChangedEmail(cfg.brevo, changed, `${base ?? ''}/login?mode=forgot`, opts.fetchImpl).then((r) => {
+        if (!r.ok && cfg.brevo.apiKey) console.warn(`[password-changed] ${changed.email}: ${r.status}`);
+      });
+      background.add(task);
+      task.finally(() => background.delete(task));
+      notifyLogin(req, changed, 'After resetting the password');
+      return startSession(res, changed, 200);
+    }
+
+    // ---------------------------------------------------------- projects (designs saved in the account)
+    if (path === '/api/projects' || path.startsWith('/api/projects/')) {
+      if (!user) throw new HttpError(401, 'Please log in.');
+      const bodyLimit = MAX_PROJECT_BYTES + 64 * 1024; // the design plus its name and version
+      if (route === 'GET /api/projects') return json(res, 200, { projects: listProjects(db, user.id) });
+      if (route === 'POST /api/projects') {
+        const body = await readJson(req, bodyLimit);
+        return json(res, 201, { project: createProject(db, user.id, body.name, body.project) });
+      }
+      const m = path.match(/^\/api\/projects\/([\w-]{1,64})$/);
+      if (m) {
+        if (req.method === 'GET') return json(res, 200, getProject(db, user.id, m[1]));
+        if (req.method === 'PUT') return json(res, 200, { project: updateProject(db, user.id, m[1], await readJson(req, bodyLimit)) });
+        if (req.method === 'DELETE') {
+          deleteProject(db, user.id, m[1]);
+          return json(res, 200, { ok: true });
+        }
+        throw new HttpError(405, 'Method not allowed.');
+      }
     }
 
     throw new HttpError(404, 'Not found.');
@@ -269,7 +384,7 @@ export function createApp(cfg: Config, db: Db, opts: AppOptions = {}) {
 
       // Public pages and files, the same for everyone.
       if (path === '/robots.txt')
-        return send(res, 200, `User-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: ${siteUrl(req)}/sitemap.xml\n`, {
+        return send(res, 200, `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /reset-password\n\nSitemap: ${siteUrl(req)}/sitemap.xml\n`, {
           'Content-Type': 'text/plain; charset=utf-8',
           'Cache-Control': 'public, max-age=3600',
         });
@@ -301,6 +416,15 @@ export function createApp(cfg: Config, db: Db, opts: AppOptions = {}) {
         return sendPage(res, 200, cached(`${t.slug} ${site}`, () => renderTemplatePage(t, site, cfg.shinyliveUrl)));
       }
 
+      // Choosing a new password from the emailed link (for everyone: the link is the proof).
+      if (path === '/reset-password')
+        return send(res, 200, resetPage, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'Referrer-Policy': 'no-referrer', // the token is in the address
+          'X-Robots-Tag': 'noindex',
+        });
+
       // Logged-out visitors get the landing page (with the login and registration form) at / and /login.
       if (path === '/login') {
         if (user) return send(res, 302, '', { Location: safeNext(url.searchParams.get('next')) });
@@ -319,6 +443,7 @@ export function createApp(cfg: Config, db: Db, opts: AppOptions = {}) {
       }
       return serveEditor(res, path);
     } catch (e) {
+      if (e instanceof ProjectError) return json(res, e.status, { error: e.message, ...e.extra });
       if (e instanceof HttpError) {
         if (req.url?.startsWith('/api/')) return json(res, e.status, { error: e.message });
         return send(res, e.status, e.message, { 'Content-Type': 'text/plain; charset=utf-8' });

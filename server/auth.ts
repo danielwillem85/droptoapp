@@ -80,6 +80,11 @@ export function deleteSession(db: Db, token: string | undefined) {
   if (token) db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(sha256(token));
 }
 
+/** Log a user out everywhere (e.g. after a password change). */
+export function deleteAllSessions(db: Db, userId: number) {
+  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
+}
+
 export function purgeExpiredSessions(db: Db) {
   db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(Date.now());
 }

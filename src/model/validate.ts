@@ -1,5 +1,6 @@
 import { sidebarUsed } from './codegen';
 import { COMPONENTS } from './components';
+import { findBrowserCalls } from './debug';
 import { parseWidths, VALID_R_ID } from './rcode';
 import { parseR } from './rparse';
 import { walk } from './tree';
@@ -32,7 +33,15 @@ export function validate(root: UINode): Issue[] {
         parseR(code);
       } catch (e) {
         issues.push({ nodeId: n.id, severity: 'error', message: `${def.label}: R syntax error in ${what}: ${(e as Error).message}` });
+        continue;
       }
+      // browser() is for debugging: fine while working on the app, but it should not be deployed.
+      if (findBrowserCalls(code).length)
+        issues.push({
+          nodeId: n.id,
+          severity: 'warning',
+          message: `${def.label}: ${what} calls browser() for debugging. Remove it before you deploy the app.`,
+        });
     }
     if (def.renderFn && !String(n.props.code ?? '').trim()) {
       const other = String(root.props.serverCode ?? '');

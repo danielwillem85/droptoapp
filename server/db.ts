@@ -41,6 +41,27 @@ export function openDb(path: string): Db {
       created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     );
     CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
+
+    -- Designs saved in the account ("My projects")
+    CREATE TABLE IF NOT EXISTS projects (
+      id         TEXT    PRIMARY KEY,             -- random, unguessable
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name       TEXT    NOT NULL,
+      data       TEXT    NOT NULL,                -- the design as JSON (format droptoapp/v1, incl. hand-written app.R)
+      version    INTEGER NOT NULL DEFAULT 1,      -- +1 on every content change; used to detect edits elsewhere
+      created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      updated_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS projects_user ON projects(user_id, updated_at);
+
+    -- "Forgot your password?" links: single use, short-lived; only a hash of the token is stored
+    CREATE TABLE IF NOT EXISTS password_resets (
+      token_hash TEXT    PRIMARY KEY,             -- sha256 of the token in the emailed link
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at INTEGER NOT NULL,                -- unix ms
+      created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS password_resets_user ON password_resets(user_id);
   `);
   return db;
 }

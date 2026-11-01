@@ -24,11 +24,22 @@ import type { ComponentType, Project, Props, UINode } from '../model/types';
 
 const HISTORY_LIMIT = 200;
 
+/**
+ * One undo step: the design and, when app.R was edited by hand, that exact text (with its
+ * formatting, comments and any syntax error). Undo/redo restore both, so undoing a visual edit
+ * brings back the code as you wrote it, not code regenerated from the design.
+ */
+export interface Snapshot {
+  root: UINode;
+  codeDraft: string | null;
+  codeError: CodeError | null;
+}
+
 export interface EditorState {
   root: UINode;
   selectedId: string | null;
-  past: UINode[];
-  future: UINode[];
+  past: Snapshot[];
+  future: Snapshot[];
   /** Consecutive edits with the same key (e.g. typing in one field) collapse into one undo step. */
   coalesceKey: string | null;
   /**
@@ -62,6 +73,8 @@ export type Action =
   | { type: 'setCode'; code: string }
   | { type: 'discardCode' }
   | { type: 'load'; project: Project }
+  /** Switch to another project: its own design and a fresh undo history. */
+  | { type: 'replace'; state: EditorState }
   | { type: 'undo' }
   | { type: 'redo' };
 
@@ -82,6 +95,11 @@ function projectState(project: Project, prev: UINode): Pick<EditorState, 'root' 
   return { root: error ? project.root : reconcileIds(prev, root), codeDraft: project.code, codeError: error };
 }
 
+/** The design in an editor state, as stored in the account and in the browser. */
+export function stateJson(s: Pick<EditorState, 'root' | 'codeDraft'>): string {
+  return JSON.stringify({ format: 'droptoapp/v1', root: s.root, ...(s.codeDraft !== null ? { code: s.codeDraft } : {}) });
+}
+
 export function initialState(project: Project): EditorState {
   return {
     ...projectState(project, project.root),
@@ -92,18 +110,40 @@ export function initialState(project: Project): EditorState {
   };
 }
 
+const snapshot = (s: EditorState): Snapshot => ({ root: s.root, codeDraft: s.codeDraft, codeError: s.codeError });
+
+/**
+ * Apply a change as one undo step. A change of the design without an explicit codeDraft is a visual
+ * edit: the code is then regenerated from the design. A change of only the code (e.g. a comment
+ * typed in app.R) is an undo step too.
+ */
 function commit(state: EditorState, root: UINode, extra: Partial<EditorState> = {}, coalesceKey: string | null = null): EditorState {
-  if (root === state.root) return { ...state, ...extra };
+  const designChanged = root !== state.root;
+  const codeDraft = extra.codeDraft !== undefined ? extra.codeDraft : designChanged ? null : state.codeDraft;
+  const codeError = extra.codeError !== undefined ? extra.codeError : designChanged ? null : state.codeError;
+  if (!designChanged && codeDraft === state.codeDraft) return { ...state, ...extra };
   const merge = coalesceKey !== null && coalesceKey === state.coalesceKey;
   return {
     ...state,
-    codeDraft: null, // a visual edit: regenerate the code from the design
-    codeError: null,
     ...extra,
     root,
-    past: merge ? state.past : [...state.past, state.root].slice(-HISTORY_LIMIT),
+    codeDraft,
+    codeError,
+    past: merge ? state.past : [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
     future: [],
     coalesceKey,
+  };
+}
+
+/** Go to a snapshot from the history, keeping the selection when that component still exists. */
+function restore(state: EditorState, to: Snapshot, past: Snapshot[], future: Snapshot[]): EditorState {
+  return {
+    ...state,
+    ...to,
+    past,
+    future,
+    coalesceKey: null,
+    selectedId: state.selectedId && findNode(to.root, state.selectedId) ? state.selectedId : null,
   };
 }
 
@@ -133,7 +173,8 @@ export function reducer(state: EditorState, action: Action): EditorState {
   // history navigation and loading another project must not replace it.
   // Keep inspection, source editing (including native undo), and explicit
   // discard available. Guard here as well as in the UI for keyboard/drop events.
-  if (state.codeError && action.type !== 'select' && action.type !== 'setCode' && action.type !== 'discardCode')
+  // 'replace' is only used after the current design was saved to the account, so nothing is lost.
+  if (state.codeError && action.type !== 'select' && action.type !== 'setCode' && action.type !== 'discardCode' && action.type !== 'replace')
     return state;
 
   switch (action.type) {
@@ -219,7 +260,9 @@ export function reducer(state: EditorState, action: Action): EditorState {
     }
 
     case 'discardCode':
-      return { ...state, codeDraft: null, codeError: null, coalesceKey: null };
+      // An undo step of its own, so Undo brings the discarded (or reformatted) code back.
+      if (state.codeDraft === null) return state;
+      return commit(state, state.root, { codeDraft: null, codeError: null });
 
     case 'load': {
       const next = projectState(action.project, state.root);
@@ -228,34 +271,18 @@ export function reducer(state: EditorState, action: Action): EditorState {
       return s.root === state.root ? { ...s, coalesceKey: null } : s;
     }
 
+    case 'replace':
+      return action.state;
+
     case 'undo': {
       if (!state.past.length) return state;
-      const prev = state.past[state.past.length - 1];
-      return {
-        ...state,
-        root: prev,
-        past: state.past.slice(0, -1),
-        future: [state.root, ...state.future],
-        coalesceKey: null,
-        codeDraft: null,
-        codeError: null,
-        selectedId: state.selectedId && findNode(prev, state.selectedId) ? state.selectedId : null,
-      };
+      return restore(state, state.past[state.past.length - 1], state.past.slice(0, -1), [snapshot(state), ...state.future]);
     }
 
     case 'redo': {
       if (!state.future.length) return state;
       const [next, ...rest] = state.future;
-      return {
-        ...state,
-        root: next,
-        past: [...state.past, state.root],
-        future: rest,
-        coalesceKey: null,
-        codeDraft: null,
-        codeError: null,
-        selectedId: state.selectedId && findNode(next, state.selectedId) ? state.selectedId : null,
-      };
+      return restore(state, next, [...state.past, snapshot(state)].slice(-HISTORY_LIMIT), rest);
     }
   }
 }

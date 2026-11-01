@@ -115,7 +115,7 @@ test('registering with the newsletter creates the user, logs in, and adds them t
   assert.deepEqual(contact.body, { email: 'ada@example.com', listIds: [7], updateEnabled: true, attributes: { FIRSTNAME: 'Ada' } });
   const notification = brevoCalls.find(call => call.url.endsWith('/smtp/email'))!;
   assert.equal(notification.headers['api-key'], 'xkeysib-test');
-  assert.deepEqual(notification.body.to, [{ email: 'info@droptoapp.com' }]);
+  assert.deepEqual(notification.body.to, [{ email: 'danielvdpalm@gmail.com' }], 'NOTIFY_EMAILS default');
   assert.deepEqual(notification.body.sender, { email: 'info@droptoapp.com', name: 'DropToApp' });
   assert.equal(notification.body.subject, 'New DropToApp account created');
   assert.match(String(notification.body.textContent), /Name: Ada\nEmail: ada@example.com/);
@@ -149,7 +149,7 @@ test('without newsletter consent, only the owner notification is sent', async ()
   await app.idle();
   assert.equal(brevoCalls.length, 1);
   assert.equal(brevoCalls[0].url, 'https://brevo.test/v3/smtp/email');
-  assert.deepEqual(brevoCalls[0].body.to, [{ email: 'info@droptoapp.com' }]);
+  assert.deepEqual(brevoCalls[0].body.to, [{ email: 'danielvdpalm@gmail.com' }]);
   assert.match(String(brevoCalls[0].body.textContent), /Email: grace@example.com/);
   assert.match(String(brevoCalls[0].body.textContent), /Newsletter: Not opted in/);
   const row = db.prepare('SELECT newsletter, newsletter_at, brevo_status FROM users WHERE email = ?').get('grace@example.com') as Record<string, unknown>;
@@ -192,9 +192,28 @@ test('login, wrong password, logout', async () => {
   res = await post('/api/login', { email: 'nobody@example.com', password: 'whatever12' });
   assert.equal(res.status, 401, 'unknown email gets the same answer');
 
-  res = await post('/api/login', { email: 'ADA@example.com', password: 'lovelace1815' });
+  await app.idle();
+  assert.equal(brevoCalls.length, 0, 'failed logins send no notification');
+
+  res = await fetch(base + '/api/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'user-agent': 'TestBrowser/1.0' },
+    body: JSON.stringify({ email: 'ADA@example.com', password: 'lovelace1815' }),
+    redirect: 'manual',
+  });
   assert.equal(res.status, 200);
   const cookie = cookieOf(res);
+  // Every login is reported to NOTIFY_EMAILS
+  await app.idle();
+  assert.equal(brevoCalls.length, 1);
+  const login = brevoCalls[0];
+  assert.equal(login.url, 'https://brevo.test/v3/smtp/email');
+  assert.deepEqual(login.body.to, [{ email: 'danielvdpalm@gmail.com' }]);
+  assert.equal(login.body.subject, 'DropToApp login: ada@example.com');
+  const text = String(login.body.textContent);
+  for (const line of [/Name: Ada/, /Email: ada@example.com/, /Account ID: 1/, /How: Password/, /IP address: 127\.0\.0\.1/, /Browser: TestBrowser\/1\.0/, /Time \(UTC\): \d{4}-\d\d-\d\dT/])
+    assert.match(text, line);
+  assert.doesNotMatch(JSON.stringify(login.body), /lovelace1815|password_hash|te_session/);
   assert.equal((await get('/', cookie)).status, 200);
 
   res = await post('/api/logout', {}, cookie);
@@ -202,7 +221,7 @@ test('login, wrong password, logout', async () => {
   res = await get('/', cookie);
   assert.doesNotMatch(await res.text(), /EDITOR/, 'the old cookie no longer works');
   await app.idle();
-  assert.equal(brevoCalls.length, 0, 'existing-account logins do not send notifications');
+  assert.equal(brevoCalls.length, 1, 'one notice for the login; logging out sends nothing');
 });
 
 test('the landing page is ready for search engines and link previews', async () => {
@@ -349,6 +368,20 @@ const notificationAccount = {
   id: 42, email: 'new@example.com', name: 'New User', newsletter: false, createdAt: '2026-10-08T12:00:00.000Z',
 };
 
+test('NOTIFY_EMAILS sets who gets the account and login notices', async () => {
+  assert.deepEqual(loadConfig({} as NodeJS.ProcessEnv).brevo.notifyEmails, ['danielvdpalm@gmail.com']);
+  assert.deepEqual(loadConfig({ NOTIFY_EMAILS: ' a@x.com, not-an-email ,b@y.org ' } as NodeJS.ProcessEnv).brevo.notifyEmails, ['a@x.com', 'b@y.org']);
+  const none = loadConfig({ NOTIFY_EMAILS: '', BREVO_API_KEY: 'k' } as NodeJS.ProcessEnv);
+  assert.deepEqual(none.brevo.notifyEmails, []);
+  const skipped = await sendAccountNotification(none.brevo, notificationAccount, async () => assert.fail('nothing to send'));
+  assert.deepEqual(skipped, { ok: false, status: 'skipped: NOTIFY_EMAILS is empty' });
+  const both = loadConfig({ NOTIFY_EMAILS: 'danielvdpalm@gmail.com,info@droptoapp.com', BREVO_API_KEY: 'k' } as NodeJS.ProcessEnv);
+  await sendAccountNotification(both.brevo, notificationAccount, async (_i, init) => {
+    assert.deepEqual(JSON.parse(String(init?.body)).to, [{ email: 'danielvdpalm@gmail.com' }, { email: 'info@droptoapp.com' }]);
+    return new Response('{}', { status: 201 });
+  });
+});
+
 test('account notification needs no list ID and uses the configured sender', async () => {
   const cfg = loadConfig({ BREVO_API_KEY: 'test-key', BREVO_SENDER_EMAIL: ' verified@example.com ' });
   assert.equal(cfg.brevo.listId, null);
@@ -358,7 +391,7 @@ test('account notification needs no list ID and uses the configured sender', asy
     assert.ok(init?.signal instanceof AbortSignal, 'provider calls have a timeout signal');
     const body = JSON.parse(String(init?.body));
     assert.deepEqual(body.sender, { email: 'verified@example.com', name: 'DropToApp' });
-    assert.deepEqual(body.to, [{ email: 'info@droptoapp.com' }]);
+    assert.deepEqual(body.to, [{ email: 'danielvdpalm@gmail.com' }]);
     assert.match(body.textContent, /Account ID: 42/);
     return new Response(JSON.stringify({ messageId: 'test-message' }), { status: 201 });
   });
